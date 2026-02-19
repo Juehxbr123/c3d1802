@@ -52,6 +52,65 @@ const Orders = () => {
     } catch {
       setStats({ total_orders: 0, new_orders: 0, active_orders: 0 });
       message.warning('Статистика временно недоступна');
+
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get('/api/orders/', { params: { status_filter: statusFilter } });
+      setOrders(data);
+    } catch {
+      message.error('Не удалось загрузить заявки');
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter]);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/orders/stats');
+      setStats(data);
+    } catch {
+      setStats({ total_orders: 0, new_orders: 0, active_orders: 0 });
+      message.warning('Статистика временно недоступна');
+    }
+    const { data } = await axios.get('/api/orders/stats');
+    setStats(data);
+  }, []);
+
+  useEffect(() => {
+    fetchOrders();
+    fetchStats();
+  }, [fetchOrders, fetchStats]);
+
+  const openOrder = async (order) => {
+    setSelectedOrder(order);
+    setModalVisible(true);
+    try {
+      const [filesResp, msgResp] = await Promise.all([
+        axios.get(`/api/orders/${order.id}/files`),
+        axios.get(`/api/orders/${order.id}/messages`),
+      ]);
+      setFiles(filesResp.data.files || []);
+      setChatMessages(msgResp.data.messages || []);
+    } catch {
+      setFiles([]);
+      setChatMessages([]);
+      message.warning('Не удалось загрузить файлы или чат по заявке');
+    }
+  };
+
+  const sendManagerMessage = async (values) => {
+    if (!selectedOrder) return;
+    setSending(true);
+    try {
+      await axios.post(`/api/orders/${selectedOrder.id}/messages`, { text: values.text });
+      message.success('Сообщение отправлено в Telegram');
+      const { data } = await axios.get(`/api/orders/${selectedOrder.id}/messages`);
+      setChatMessages(data.messages || []);
+    } catch (err) {
+      message.error(err?.response?.data?.detail || 'Не удалось отправить сообщение в Telegram');
+    } finally {
+      setSending(false);
     }
   }, []);
 
@@ -99,6 +158,39 @@ const Orders = () => {
     } catch (err) {
       message.error(err?.response?.data?.detail || 'Не удалось обновить статус');
     }
+  const updateStatus = async (id, status) => {
+    try {
+      await axios.put(`/api/orders/${id}`, { status });
+      fetchOrders();
+    } catch (err) {
+      message.error(err?.response?.data?.detail || 'Не удалось обновить статус');
+    }
+    const [filesResp, msgResp] = await Promise.all([
+      axios.get(`/api/orders/${order.id}/files`),
+      axios.get(`/api/orders/${order.id}/messages`),
+    ]);
+    setFiles(filesResp.data.files || []);
+    setChatMessages(msgResp.data.messages || []);
+  };
+
+  const sendManagerMessage = async (values) => {
+    if (!selectedOrder) return;
+    setSending(true);
+    try {
+      await axios.post(`/api/orders/${selectedOrder.id}/messages`, { text: values.text });
+      message.success('Сообщение отправлено в Telegram');
+      const { data } = await axios.get(`/api/orders/${selectedOrder.id}/messages`);
+      setChatMessages(data.messages || []);
+    } catch (err) {
+      message.error(err?.response?.data?.detail || 'Не удалось отправить сообщение в Telegram');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const updateStatus = async (id, status) => {
+    await axios.put(`/api/orders/${id}`, { status });
+    fetchOrders();
   };
 
   const columns = [

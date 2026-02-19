@@ -20,6 +20,7 @@ const BotConfig = () => {
       textsForm.setFieldsValue(textsResponse.data || {});
       settingsForm.setFieldsValue(settingsResponse.data || {});
     } catch {
+    } catch (error) {
       message.error('Ошибка загрузки настроек');
     } finally {
       setLoading(false);
@@ -79,6 +80,16 @@ const BotConfig = () => {
             <Form.Item label='После успешной отправки' name='text_submit_ok'><TextArea rows={2} /></Form.Item>
             <Form.Item label='При ошибке отправки' name='text_submit_fail'><TextArea rows={2} /></Form.Item>
 
+      label: '🧩 Тексты и раздел «О нас»',
+      children: (
+        <Card title='Конструктор контента'>
+          <Form form={textsForm} layout='vertical' onFinish={saveTexts}>
+            <Form.Item label='Текст главного меню' name='welcome_menu_msg'>
+              <TextArea rows={3} />
+            </Form.Item>
+            <Form.Item label='Кратко «О нас»' name='about_text'>
+              <TextArea rows={3} />
+            </Form.Item>
             <Divider>Подразделы «О нас»</Divider>
             <Form.Item label='🏭 Оборудование (caption)' name='about_equipment_text'><TextArea rows={3} /></Form.Item>
             <Form.Item label='🖼 Наши проекты (caption)' name='about_projects_text'><TextArea rows={3} /></Form.Item>
@@ -95,11 +106,15 @@ const BotConfig = () => {
       label: '⚙️ Фото и системные настройки',
       children: (
         <Card title='Фото шагов и маршрутизация'>
+      label: '⚙️ Система и фото',
+      children: (
+        <Card title='Системные настройки'>
           <Alert
             type='info'
             showIcon
             style={{ marginBottom: 16 }}
             message='В поле фото можно указать путь в контейнере, URL или Telegram file_id. Если поле пустое — бот берет placeholder_photo_path.'
+            message='Фото можно задавать как путь к файлу внутри контейнера, URL картинки или Telegram file_id. Если поле пустое — используется PLACEHOLDER_PHOTO_PATH.'
           />
           <Form form={settingsForm} layout='vertical' onFinish={saveSettings}>
             <Form.Item label='ID чата/группы для заявок (orders_chat_id)' name='orders_chat_id'>
@@ -112,6 +127,7 @@ const BotConfig = () => {
               <Input placeholder='например: /app/assets/placeholder.png или https://...' />
             </Form.Item>
             <Divider>Фото по шагам/разделам</Divider>
+            <Divider>Фото шагов/разделов</Divider>
             <Form.Item label='Главное меню (photo_main_menu)' name='photo_main_menu'><Input /></Form.Item>
             <Form.Item label='Рассчитать печать (photo_print)' name='photo_print'><Input /></Form.Item>
             <Form.Item label='3D-сканирование (photo_scan)' name='photo_scan'><Input /></Form.Item>

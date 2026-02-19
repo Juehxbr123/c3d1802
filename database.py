@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from contextlib import contextmanager
 from typing import Any
@@ -9,6 +10,7 @@ from pymysql.cursors import DictCursor
 from config import settings
 
 ALLOWED_STATUSES = {"draft", "new", "submitted", "in_work", "done", "canceled"}
+ALLOWED_STATUSES = {"draft", "new", "in_work", "done", "canceled"}
 
 
 class DatabaseError(Exception):
@@ -72,6 +74,13 @@ def create_order(user_id: int, username: str | None, full_name: str | None, bran
                 """,
                 (user_id, username, full_name, branch),
             )
+        cur.execute(
+            """
+            INSERT INTO orders (user_id, username, full_name, branch, status, order_payload)
+            VALUES (%s, %s, %s, %s, 'draft', JSON_OBJECT())
+            """,
+            (user_id, username, full_name, branch),
+        )
         return cur.lastrowid
 
 
@@ -89,6 +98,7 @@ def finalize_order(order_id: int, summary: str | None = None) -> None:
             cur.execute("UPDATE orders SET status='new', summary=%s, updated_at=NOW() WHERE id=%s", (summary, order_id))
         except Exception:
             cur.execute("UPDATE orders SET status='submitted', updated_at=NOW() WHERE id=%s", (order_id,))
+        cur.execute("UPDATE orders SET status='new', summary=%s, updated_at=NOW() WHERE id=%s", (summary, order_id))
 
 
 def get_bot_config() -> dict[str, str]:
@@ -177,6 +187,48 @@ def add_order_file(
             INSERT INTO order_files (order_id, telegram_file_id, telegram_message_id, original_name, mime_type, file_size, local_path)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO order_messages (order_id, direction, message_text, telegram_message_id)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (order_id, direction, text, telegram_message_id),
+        )
+        return cur.lastrowid
+
+
+def list_order_messages(order_id: int, limit: int = 30) -> list[dict[str, Any]]:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT * FROM order_messages
+            WHERE order_id=%s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (order_id, limit),
+        )
+        rows = cur.fetchall()
+        rows.reverse()
+        return rows
+
+
+def add_order_file(
+    order_id: int,
+    file_id: str,
+    filename: str,
+    mime: str | None,
+    size: int | None,
+    telegram_message_id: int | None = None,
+    local_path: str | None = None,
+) -> int:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO order_files (order_id, telegram_file_id, telegram_message_id, original_name, mime_type, file_size, local_path)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
             (order_id, file_id, telegram_message_id, filename, mime, size, local_path),
         )
         return cur.lastrowid
@@ -197,6 +249,11 @@ def get_order_statistics() -> dict[str, int]:
         cur.execute("SELECT COUNT(*) AS c FROM orders WHERE status IN ('new','in_work')")
         active = cur.fetchone()["c"]
         return {"total_orders": total, "new_orders": new_orders, "active_orders": active}
+
+
+def get_orders_paginated(limit: int, offset: int, status_filter: str | None = None):
+    return list_orders(status_filter, limit, offset)
+
 
 
 def get_orders_paginated(limit: int, offset: int, status_filter: str | None = None):
