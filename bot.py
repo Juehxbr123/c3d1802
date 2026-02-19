@@ -36,10 +36,17 @@ def bot_cfg() -> dict[str, str]:
 def get_cfg(key: str, default: str = "") -> str:
     return bot_cfg().get(key, default) or default
 
+def bot_cfg() -> dict[str, str]:
+    try:
+        return database.get_bot_config()
+    except Exception:
+        return {}
 
 def get_orders_chat_id() -> str:
     return get_cfg("orders_chat_id", getattr(settings, "orders_chat_id", ""))
 
+def get_cfg(key: str, default: str = "") -> str:
+    return bot_cfg().get(key, default)
 
 def photo_ref_for(step_key: str) -> str:
     cfg = bot_cfg()
@@ -49,6 +56,8 @@ def photo_ref_for(step_key: str) -> str:
         or getattr(settings, "placeholder_photo_path", "")
     )
 
+def get_orders_chat_id() -> str:
+    return get_cfg("orders_chat_id", settings.orders_chat_id)
 
 # -----------------------------
 # FSM
@@ -56,6 +65,9 @@ def photo_ref_for(step_key: str) -> str:
 class Form(StatesGroup):
     step = State()
 
+def photo_ref_for(step_key: str) -> str:
+    cfg = bot_cfg()
+    return cfg.get(step_key, "") or cfg.get("placeholder_photo_path", "") or settings.placeholder_photo_path
 
 # -----------------------------
 # Keyboards
@@ -396,6 +408,8 @@ async def on_set(cb: CallbackQuery, state: FSMContext) -> None:
 
     await cb.answer("Сохранено")
 
+async def on_start(message: Message, state: FSMContext):
+    await show_main(message, state)
 
 async def on_submit(cb: CallbackQuery, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
@@ -420,6 +434,42 @@ async def on_submit(cb: CallbackQuery, state: FSMContext, bot: Bot) -> None:
     await send_step_cb(cb, ok_text, kb([[InlineKeyboardButton(text="🏠 Главное меню", callback_data="nav:menu")]]))
     await state.clear()
 
+async def on_set(cb: CallbackQuery, state: FSMContext):
+    _, key, value = cb.data.split(":", 2)
+    data = await state.get_data()
+    payload = data.get("payload", {})
+    payload[key] = value
+    await state.update_data(payload=payload)
+    await persist(state)
+
+    if key == "technology":
+        await send_step_cb(cb, get_cfg("text_select_material", "Выберите материал:"), step_keyboard_for_print(payload))
+    elif key == "material":
+        if value.startswith("🤔"):
+            await state.update_data(waiting_text="other_material")
+            await send_step_cb(cb, get_cfg("text_describe_material", "Опишите материал/смолу свободным текстом:"), kb([nav_row()]))
+        else:
+            await send_step_cb(cb, get_cfg("text_attach_file", "Прикрепите STL/3MF/OBJ документ или фото, либо нажмите ❌ У меня нет файла"), kb([
+                [InlineKeyboardButton(text="❌ У меня нет файла", callback_data="set:file:нет")],
+                nav_row(),
+            ]))
+    elif key in {"scan_type", "idea_type"}:
+        await state.update_data(waiting_text="description")
+        await send_step_cb(cb, get_cfg("text_describe_task", "Опишите задачу свободным текстом:"), kb([nav_row()]))
+    elif key == "file":
+        await send_result(cb, state)
+    else:
+        await cb.answer("Сохранено")
+
+
+async def on_text(message: Message, state: FSMContext):
+    data = await state.get_data()
+    waiting = data.get("waiting_text")
+    if not waiting:
+        order_id = database.find_or_create_active_order(message.from_user.id, message.from_user.username, message.from_user.full_name)
+        database.add_order_message(order_id, "in", message.text or "")
+        await send_step(message, "Сообщение получено. Менеджер ответит в этом чате.")
+        return
 
 async def on_text(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
@@ -451,6 +501,8 @@ async def on_text(message: Message, state: FSMContext) -> None:
     if order_id:
         database.add_order_message(order_id, "in", message.text or "", message.message_id)
 
+    database.add_order_file(data["order_id"], file_id, file_name, mime, size, message.message_id, local_path)
+    await send_result_message(message, state)
 
 async def on_file(message: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
