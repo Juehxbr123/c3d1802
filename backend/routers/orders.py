@@ -49,6 +49,8 @@ async def get_orders(page: int = 1, limit: int = 20, status_filter: str | None =
     except Exception as exc:
         logger.exception("Ошибка получения списка заявок")
         raise HTTPException(status_code=500, detail="Ошибка получения списка заявок") from exc
+
+
     offset = (page - 1) * limit
     orders = database.get_orders_paginated(limit, offset, status_filter)
     for order in orders:
@@ -63,6 +65,8 @@ async def get_order_stats(payload: dict = Depends(verify_token)):
     except Exception as exc:
         logger.exception("Ошибка получения статистики")
         return {"total_orders": 0, "new_orders": 0, "active_orders": 0}
+
+
     return database.get_order_statistics()
 
 

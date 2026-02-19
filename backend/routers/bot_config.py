@@ -14,6 +14,20 @@ TEXT_KEYS = [
     "about_projects_text",
     "about_contacts_text",
     "about_map_text",
+    "text_print_tech",
+    "text_scan_type",
+    "text_idea_type",
+    "text_select_material",
+    "text_describe_material",
+    "text_attach_file",
+    "text_describe_task",
+    "text_result_prefix",
+    "text_price_note",
+    "text_submit_ok",
+    "text_submit_fail",
+]
+
+
 ]
 
 PHOTO_KEYS = [

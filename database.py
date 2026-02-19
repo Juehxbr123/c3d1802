@@ -187,6 +187,48 @@ def add_order_file(
             INSERT INTO order_files (order_id, telegram_file_id, telegram_message_id, original_name, mime_type, file_size, local_path)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO order_messages (order_id, direction, message_text, telegram_message_id)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (order_id, direction, text, telegram_message_id),
+        )
+        return cur.lastrowid
+
+
+def list_order_messages(order_id: int, limit: int = 30) -> list[dict[str, Any]]:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            SELECT * FROM order_messages
+            WHERE order_id=%s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (order_id, limit),
+        )
+        rows = cur.fetchall()
+        rows.reverse()
+        return rows
+
+
+def add_order_file(
+    order_id: int,
+    file_id: str,
+    filename: str,
+    mime: str | None,
+    size: int | None,
+    telegram_message_id: int | None = None,
+    local_path: str | None = None,
+) -> int:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO order_files (order_id, telegram_file_id, telegram_message_id, original_name, mime_type, file_size, local_path)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
             (order_id, file_id, telegram_message_id, filename, mime, size, local_path),
         )
         return cur.lastrowid
