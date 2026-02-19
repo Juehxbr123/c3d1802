@@ -1,9 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Card, Form, Input, Button, Switch, message, Tabs, Space,
-  Divider, InputNumber, Alert
-} from 'antd';
-import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
+import React, { useEffect, useState } from 'react';
+import { Alert, Button, Card, Divider, Form, Input, Tabs, message } from 'antd';
+import { ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import axios from 'axios';
 
 const { TextArea } = Input;
@@ -14,37 +11,20 @@ const BotConfig = () => {
   const [settingsForm] = Form.useForm();
 
   const loadConfig = React.useCallback(async () => {
-    console.log('BotConfig: Loading config...');
     setLoading(true);
     try {
       const [textsResponse, settingsResponse] = await Promise.all([
         axios.get('/api/bot-config/texts'),
         axios.get('/api/bot-config/settings')
       ]);
-
-      console.log('BotConfig: Loaded texts:', textsResponse.data);
-      console.log('BotConfig: Loaded settings:', settingsResponse.data);
-
-      if (textsResponse.data) {
-        textsForm.setFieldsValue(textsResponse.data);
-      }
-
-      if (settingsResponse.data) {
-        // Конвертируем "1"/"0" в true/false для Switch
-        const normalizedSettings = { ...settingsResponse.data };
-        ['is_photo_required', 'step_extra_enabled'].forEach(key => {
-          if (normalizedSettings[key] !== undefined) {
-            normalizedSettings[key] = normalizedSettings[key] === '1' || normalizedSettings[key] === 1 || normalizedSettings[key] === true || normalizedSettings[key] === "true";
-          }
-        });
-        settingsForm.setFieldsValue(normalizedSettings);
-      }
-    } catch (error) {
-      console.error('BotConfig: Load error:', error);
+      textsForm.setFieldsValue(textsResponse.data || {});
+      settingsForm.setFieldsValue(settingsResponse.data || {});
+    } catch {
       message.error('Ошибка загрузки настроек');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [textsForm, settingsForm]);
+  }, [settingsForm, textsForm]);
 
   useEffect(() => {
     loadConfig();
@@ -54,9 +34,9 @@ const BotConfig = () => {
     setLoading(true);
     try {
       await axios.put('/api/bot-config/texts', values);
-      message.success('Тексты сохранены успешно');
-    } catch (error) {
-      message.error('Ошибка сохранения текстов');
+      message.success('Тексты сохранены');
+    } catch {
+      message.error('Не удалось сохранить тексты');
     } finally {
       setLoading(false);
     }
@@ -66,333 +46,91 @@ const BotConfig = () => {
     setLoading(true);
     try {
       await axios.put('/api/bot-config/settings', values);
-      message.success('Настройки сохранены успешно');
-    } catch (error) {
-      message.error('Ошибка сохранения настроек');
+      message.success('Настройки сохранены');
+    } catch {
+      message.error('Не удалось сохранить настройки');
     } finally {
       setLoading(false);
     }
   };
 
-  const tabItems = [
+  const tabs = [
     {
       key: 'texts',
-      label: '📝 Тексты бота',
+      label: '🧩 Конструктор ответов бота',
       children: (
-        <Card title="Конструктор текстов">
-          <Form
-            form={textsForm}
-            layout="vertical"
-            onFinish={saveTexts}
-          >
-            <Form.Item
-              label="Приветственное сообщение"
-              name="welcome_msg"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={3}
-                placeholder="Привет! Я принимаю заказы на токарные работы..."
-              />
-            </Form.Item>
+        <Card title='Тексты шагов и ответов'>
+          <Form form={textsForm} layout='vertical' onFinish={saveTexts}>
+            <Form.Item label='Главное меню (caption)' name='welcome_menu_msg'><TextArea rows={3} /></Form.Item>
+            <Form.Item label='Текст «О нас» (главный)' name='about_text'><TextArea rows={3} /></Form.Item>
 
-            <Divider>Шаг 1: Фото</Divider>
+            <Divider>Ветки заявки</Divider>
+            <Form.Item label='Шаг: выбор технологии печати' name='text_print_tech'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='Шаг: выбор материала' name='text_select_material'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='Шаг: описать свой материал' name='text_describe_material'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='Шаг: прикрепить STL/3MF/OBJ' name='text_attach_file'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='Шаг: 3D-сканирование' name='text_scan_type'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='Шаг: нет модели / идея' name='text_idea_type'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='Шаг: описание задачи' name='text_describe_task'><TextArea rows={2} /></Form.Item>
 
-            <Form.Item
-              label="Текст вопроса про фото"
-              name="step_photo_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="📷 Шаг 1. Загрузите фото детали..."
-              />
-            </Form.Item>
+            <Divider>Итог и статусы</Divider>
+            <Form.Item label='Префикс итогового сообщения' name='text_result_prefix'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='Строка про стоимость' name='text_price_note'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='После успешной отправки' name='text_submit_ok'><TextArea rows={2} /></Form.Item>
+            <Form.Item label='При ошибке отправки' name='text_submit_fail'><TextArea rows={2} /></Form.Item>
 
-            <Form.Item
-              label="Кнопка 'Пропустить фото'"
-              name="btn_skip_photo"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <Input placeholder="Нет фото / Пропустить" />
-            </Form.Item>
+            <Divider>Подразделы «О нас»</Divider>
+            <Form.Item label='🏭 Оборудование (caption)' name='about_equipment_text'><TextArea rows={3} /></Form.Item>
+            <Form.Item label='🖼 Наши проекты (caption)' name='about_projects_text'><TextArea rows={3} /></Form.Item>
+            <Form.Item label='📞 Контакты (caption)' name='about_contacts_text'><TextArea rows={3} /></Form.Item>
+            <Form.Item label='📍 На карте (caption)' name='about_map_text'><TextArea rows={3} /></Form.Item>
 
-            <Divider>Шаг 2: Тип работы</Divider>
-
-            <Form.Item
-              label="Текст вопроса про тип работы"
-              name="step_type_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="🛠 Шаг 2. Что нужно сделать?"
-              />
-            </Form.Item>
-
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Form.Item
-                label="Кнопка 'Восстановление детали'"
-                name="btn_type_repair"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🛠 Восстановление детали" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Копия по образцу'"
-                name="btn_type_copy"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="⚙️ Копия по образцу" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Деталь по чертежу'"
-                name="btn_type_drawing"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="📐 Деталь по чертежу" />
-              </Form.Item>
-            </Space>
-
-            <Divider>Шаг 3: Размеры</Divider>
-
-            <Form.Item
-              label="Текст вопроса про размеры"
-              name="step_dim_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={3}
-                placeholder="📏 Шаг 3. Размеры..."
-              />
-            </Form.Item>
-
-            <Divider>Шаг 4: Условия работы</Divider>
-
-            <Form.Item
-              label="Текст вопроса про условия"
-              name="step_cond_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="⚙️ Шаг 4. Специфика детали..."
-              />
-            </Form.Item>
-
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Form.Item
-                label="Кнопка 'Вращение'"
-                name="btn_cond_rotation"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="💫 Вращение" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Неподвижно'"
-                name="btn_cond_static"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🧱 Неподвижно" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Ударная нагрузка'"
-                name="btn_cond_impact"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🔨 Ударная нагрузка" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Не знаю'"
-                name="btn_cond_unknown"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🤷‍♂️ Не знаю" />
-              </Form.Item>
-            </Space>
-
-            <Divider>Шаг 5: Срочность</Divider>
-
-            <Form.Item
-              label="Текст вопроса про срочность"
-              name="step_urgency_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="⏳ Шаг 5. Срочность"
-              />
-            </Form.Item>
-
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Form.Item
-                label="Кнопка 'СРОЧНО'"
-                name="btn_urgency_high"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🔥 СРОЧНО (Цена x2)" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Стандарт'"
-                name="btn_urgency_med"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🗓 Стандарт (2-3 дня)" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Не к спеху'"
-                name="btn_urgency_low"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🐢 Не к спеху" />
-              </Form.Item>
-            </Space>
-
-            <Divider>Финальные сообщения</Divider>
-
-            <Form.Item
-              label="Текст финального вопроса"
-              name="step_final_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="✍️ Финал. Напишите комментарий..."
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Сообщение об успехе"
-              name="msg_done"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="✅ Заказ принят!..."
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Ошибка: нет фото"
-              name="err_photo_required"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="⚠️ Я не могу принять заказ без фото..."
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Сообщение об отмене"
-              name="msg_order_canceled"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <Input placeholder="Заказ отменен" />
-            </Form.Item>
-
-            <Form.Item style={{ textAlign: 'right' }}>
-              <Space>
-                <Button icon={<ReloadOutlined />} onClick={loadConfig}>
-                  Сбросить
-                </Button>
-                <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={loading}>
-                  Сохранить тексты
-                </Button>
-              </Space>
-            </Form.Item>
+            <Button type='primary' icon={<SaveOutlined />} htmlType='submit' loading={loading}>Сохранить тексты</Button>
           </Form>
         </Card>
       )
     },
     {
       key: 'settings',
-      label: '🔧 Системные настройки',
-      forceRender: true,
+      label: '⚙️ Фото и системные настройки',
       children: (
-        <Card title="Настройки поведения бота">
-          <Form
-            form={settingsForm}
-            layout="vertical"
-            onFinish={saveSettings}
-          >
-            <Form.Item
-              label="Фото обязательно"
-              name="is_photo_required"
-              valuePropName="checked"
-              tooltip="Если включено, клиент не сможет пропустить шаг с фото"
-            >
-              <Switch checkedChildren="Да" unCheckedChildren="Нет" />
+        <Card title='Фото шагов и маршрутизация'>
+          <Alert
+            type='info'
+            showIcon
+            style={{ marginBottom: 16 }}
+            message='В поле фото можно указать путь в контейнере, URL или Telegram file_id. Если поле пустое — бот берет placeholder_photo_path.'
+          />
+          <Form form={settingsForm} layout='vertical' onFinish={saveSettings}>
+            <Form.Item label='ID чата/группы для заявок (orders_chat_id)' name='orders_chat_id'>
+              <Input placeholder='Например: 5288005751' />
             </Form.Item>
-
-            <Form.Item
-              label="Дополнительный вопрос включен"
-              name="step_extra_enabled"
-              valuePropName="checked"
-              tooltip="Добавляет еще один шаг опроса после срочности"
-            >
-              <Switch checkedChildren="Да" unCheckedChildren="Нет" />
+            <Form.Item label='Юзернейм менеджера (manager_username)' name='manager_username'>
+              <Input placeholder='например: chel3d_manager' />
             </Form.Item>
-
-            <Divider />
-
-            <Form.Item
-              label="ID чата администратора"
-              name="admin_chat_id"
-              tooltip="Telegram ID администратора для получения уведомлений"
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                placeholder="123456789"
-              />
+            <Form.Item label='Плейсхолдер по умолчанию (placeholder_photo_path)' name='placeholder_photo_path'>
+              <Input placeholder='например: /app/assets/placeholder.png или https://...' />
             </Form.Item>
+            <Divider>Фото по шагам/разделам</Divider>
+            <Form.Item label='Главное меню (photo_main_menu)' name='photo_main_menu'><Input /></Form.Item>
+            <Form.Item label='Рассчитать печать (photo_print)' name='photo_print'><Input /></Form.Item>
+            <Form.Item label='3D-сканирование (photo_scan)' name='photo_scan'><Input /></Form.Item>
+            <Form.Item label='Нет модели / идея (photo_idea)' name='photo_idea'><Input /></Form.Item>
+            <Form.Item label='О нас (photo_about)' name='photo_about'><Input /></Form.Item>
+            <Form.Item label='Оборудование (photo_about_equipment)' name='photo_about_equipment'><Input /></Form.Item>
+            <Form.Item label='Наши проекты (photo_about_projects)' name='photo_about_projects'><Input /></Form.Item>
+            <Form.Item label='Контакты (photo_about_contacts)' name='photo_about_contacts'><Input /></Form.Item>
+            <Form.Item label='На карте (photo_about_map)' name='photo_about_map'><Input /></Form.Item>
 
-            <Alert
-              message="Важно"
-              description="ID чата администратора можно получить командой /iamadmin в боте после настройки BOT_ADMIN_PASSWORD"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-
-            <Form.Item style={{ textAlign: 'right' }}>
-              <Space>
-                <Button icon={<ReloadOutlined />} onClick={loadConfig}>
-                  Сбросить
-                </Button>
-                <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={loading}>
-                  Сохранить настройки
-                </Button>
-              </Space>
-            </Form.Item>
+            <Button type='primary' icon={<SaveOutlined />} htmlType='submit' loading={loading}>Сохранить настройки</Button>
+            <Button style={{ marginLeft: 8 }} icon={<ReloadOutlined />} onClick={loadConfig}>Обновить</Button>
           </Form>
         </Card>
       )
     }
   ];
 
-  return (
-    <div className="bot-config-content">
-      <h1>⚙️ Настройки бота</h1>
-
-      <Alert
-        message="Внимание"
-        description="Изменения вступят в силу после перезапуска бота. Используйте docker compose restart bot"
-        type="warning"
-        showIcon
-        style={{ marginBottom: 24 }}
-      />
-
-      <Tabs defaultActiveKey="texts" items={tabItems} />
-    </div>
-  );
+  return <Tabs items={tabs} />;
 };
 
 export default BotConfig;
