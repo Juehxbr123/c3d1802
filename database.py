@@ -9,6 +9,7 @@ from pymysql.cursors import DictCursor
 
 from config import settings
 
+ALLOWED_STATUSES = {"draft", "new", "submitted", "in_work", "done", "canceled"}
 ALLOWED_STATUSES = {"draft", "new", "in_work", "done", "canceled"}
 
 
@@ -57,6 +58,22 @@ def init_db_if_needed() -> None:
 
 def create_order(user_id: int, username: str | None, full_name: str | None, branch: str) -> int:
     with db_cursor() as (_, cur):
+        try:
+            cur.execute(
+                """
+                INSERT INTO orders (user_id, username, full_name, branch, status, order_payload)
+                VALUES (%s, %s, %s, %s, 'draft', JSON_OBJECT())
+                """,
+                (user_id, username, full_name, branch),
+            )
+        except Exception:
+            cur.execute(
+                """
+                INSERT INTO orders (user_id, username, full_name, branch, status)
+                VALUES (%s, %s, %s, %s, 'new')
+                """,
+                (user_id, username, full_name, branch),
+            )
         cur.execute(
             """
             INSERT INTO orders (user_id, username, full_name, branch, status, order_payload)
@@ -77,6 +94,10 @@ def update_order_payload(order_id: int, payload: dict[str, Any], summary: str | 
 
 def finalize_order(order_id: int, summary: str | None = None) -> None:
     with db_cursor() as (_, cur):
+        try:
+            cur.execute("UPDATE orders SET status='new', summary=%s, updated_at=NOW() WHERE id=%s", (summary, order_id))
+        except Exception:
+            cur.execute("UPDATE orders SET status='submitted', updated_at=NOW() WHERE id=%s", (order_id,))
         cur.execute("UPDATE orders SET status='new', summary=%s, updated_at=NOW() WHERE id=%s", (summary, order_id))
 
 
@@ -186,6 +207,11 @@ def get_order_statistics() -> dict[str, int]:
         cur.execute("SELECT COUNT(*) AS c FROM orders WHERE status IN ('new','in_work')")
         active = cur.fetchone()["c"]
         return {"total_orders": total, "new_orders": new_orders, "active_orders": active}
+
+
+def get_orders_paginated(limit: int, offset: int, status_filter: str | None = None):
+    return list_orders(status_filter, limit, offset)
+
 
 
 def get_orders_paginated(limit: int, offset: int, status_filter: str | None = None):
