@@ -20,6 +20,28 @@ UPLOADS_DIR = Path("uploads")
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 
+
+
+def bot_cfg() -> dict[str, str]:
+    try:
+        return database.get_bot_config()
+    except Exception:
+        return {}
+
+
+def get_cfg(key: str, default: str = "") -> str:
+    return bot_cfg().get(key, default)
+
+
+def get_orders_chat_id() -> str:
+    return get_cfg("orders_chat_id", settings.orders_chat_id)
+
+
+def photo_ref_for(step_key: str) -> str:
+    cfg = bot_cfg()
+    return cfg.get(step_key, "") or cfg.get("placeholder_photo_path", "") or settings.placeholder_photo_path
+
+
 class Form(StatesGroup):
     step = State()
 
@@ -45,19 +67,26 @@ def nav_row(include_back=True):
     return row
 
 
-async def send_step(message: Message, text: str, keyboard: InlineKeyboardMarkup | None = None):
-    path = Path(settings.placeholder_photo_path)
-    if path.exists() and path.is_file():
+async def send_step(message: Message, text: str, keyboard: InlineKeyboardMarkup | None = None, photo_ref: str | None = None):
+    ref = photo_ref or settings.placeholder_photo_path
+    if ref:
         try:
-            await message.answer_photo(photo=FSInputFile(str(path)), caption=text, reply_markup=keyboard)
+            if ref.startswith("http://") or ref.startswith("https://"):
+                await message.answer_photo(photo=ref, caption=text, reply_markup=keyboard)
+                return
+            ref_path = Path(ref)
+            if ref_path.exists() and ref_path.is_file():
+                await message.answer_photo(photo=FSInputFile(str(ref_path)), caption=text, reply_markup=keyboard)
+                return
+            await message.answer_photo(photo=ref, caption=text, reply_markup=keyboard)
             return
         except Exception:
             logging.exception("Не удалось отправить фото шага")
     await message.answer(text, reply_markup=keyboard)
 
 
-async def send_step_cb(cb: CallbackQuery, text: str, keyboard: InlineKeyboardMarkup | None = None):
-    await send_step(cb.message, text, keyboard)
+async def send_step_cb(cb: CallbackQuery, text: str, keyboard: InlineKeyboardMarkup | None = None, photo_ref: str | None = None):
+    await send_step(cb.message, text, keyboard, photo_ref)
     await cb.answer()
 
 
@@ -92,7 +121,7 @@ def payload_summary(payload: dict) -> str:
 
 async def show_main(message: Message, state: FSMContext):
     await state.clear()
-    await send_step(message, "Добро пожаловать в Chel3D 👋\nВыберите нужный пункт меню:", menu_kb())
+    await send_step(message, get_cfg("welcome_menu_msg", "Добро пожаловать в Chel3D 👋\nВыберите нужный пункт меню:"), menu_kb(), photo_ref_for("photo_main_menu"))
 
 
 async def start_order(cb: CallbackQuery, state: FSMContext, branch: str):
@@ -129,7 +158,7 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
             [InlineKeyboardButton(text="💧 Фотополимер", callback_data="set:technology:Фотополимер")],
             [InlineKeyboardButton(text="🤷 Не знаю", callback_data="set:technology:Не знаю")],
             nav_row(False),
-        ]))
+        ]), photo_ref_for("photo_print"))
     elif step == "scan_type":
         await send_step_cb(cb, "Что нужно отсканировать?", kb([
             [InlineKeyboardButton(text="🧑 Человек", callback_data="set:scan_type:Человек")],
@@ -137,7 +166,7 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
             [InlineKeyboardButton(text="🏭 Промышленный объект", callback_data="set:scan_type:Промышленный объект")],
             [InlineKeyboardButton(text="🤔 Другое", callback_data="set:scan_type:Другое")],
             nav_row(False),
-        ]))
+        ]), photo_ref_for("photo_scan"))
     elif step == "idea_type":
         await send_step_cb(cb, "Выберите категорию:", kb([
             [InlineKeyboardButton(text="✏️ По фото/эскизу", callback_data="set:idea_type:По фото/эскизу")],
@@ -146,15 +175,15 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
             [InlineKeyboardButton(text="🎨 Вывески", callback_data="set:idea_type:Вывески")],
             [InlineKeyboardButton(text="🤔 Другое", callback_data="set:idea_type:Другое")],
             nav_row(False),
-        ]))
+        ]), photo_ref_for("photo_idea"))
     elif step == "about":
-        await send_step_cb(cb, "Chel3D — 3D-печать, 3D-сканирование и разработка моделей.", kb([
+        await send_step_cb(cb, get_cfg("about_text", "Chel3D — 3D-печать, 3D-сканирование и разработка моделей."), kb([
             [InlineKeyboardButton(text="🏭 Оборудование", callback_data="about:eq")],
             [InlineKeyboardButton(text="🖼 Наши проекты", callback_data="about:projects")],
             [InlineKeyboardButton(text="📞 Контакты", callback_data="about:contacts")],
             [InlineKeyboardButton(text="📍 На карте", callback_data="about:map")],
             nav_row(False),
-        ]))
+        ]), photo_ref_for("photo_about"))
 
 
 async def persist(state: FSMContext):
@@ -186,6 +215,18 @@ async def on_menu(cb: CallbackQuery, state: FSMContext):
     await start_order(cb, state, branch)
     step = {"print": "print_tech", "scan": "scan_type", "idea": "idea_type"}[branch]
     await render_step(cb, state, step)
+
+
+async def on_about_item(cb: CallbackQuery, state: FSMContext):
+    key = cb.data.split(":", 1)[1]
+    mapping = {
+        "eq": ("about_equipment_text", "photo_about_equipment", "🏭 Наше оборудование"),
+        "projects": ("about_projects_text", "photo_about_projects", "🖼 Наши проекты"),
+        "contacts": ("about_contacts_text", "photo_about_contacts", "📞 Контакты"),
+        "map": ("about_map_text", "photo_about_map", "📍 Мы на карте"),
+    }
+    text_key, photo_key, default_text = mapping.get(key, ("about_text", "photo_about", "О нас"))
+    await send_step_cb(cb, get_cfg(text_key, default_text), kb([nav_row()]), photo_ref_for(photo_key))
 
 
 async def on_set(cb: CallbackQuery, state: FSMContext):
@@ -304,9 +345,10 @@ async def on_submit(cb: CallbackQuery, state: FSMContext, bot: Bot):
         database.finalize_order(order_id, summary)
         database.add_order_message(order_id, "in", "Заявка отправлена")
 
-        if settings.orders_chat_id:
+        orders_chat_id = get_orders_chat_id()
+        if orders_chat_id:
             try:
-                await bot.send_message(settings.orders_chat_id, f"Новая заявка #{order_id}\n{summary}")
+                await bot.send_message(orders_chat_id, f"Новая заявка #{order_id}\n{summary}")
             except Exception:
                 logging.exception("Не удалось отправить заявку в группу")
 
@@ -365,6 +407,7 @@ def register_handlers(dp: Dispatcher, bot: Bot):
     dp.callback_query.register(on_menu, F.data.startswith("menu:"))
     dp.callback_query.register(on_nav, F.data.startswith("nav:"))
     dp.callback_query.register(on_set, F.data.startswith("set:"))
+    dp.callback_query.register(on_about_item, F.data.startswith("about:"))
     dp.callback_query.register(submit_handler, F.data == "submit:order")
     dp.message.register(file_handler, F.content_type == ContentType.DOCUMENT)
     dp.message.register(on_text, Form.step)
