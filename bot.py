@@ -1,7 +1,5 @@
 import asyncio
-import json
 import logging
-import os
 from pathlib import Path
 
 from aiohttp import web
@@ -64,14 +62,31 @@ async def send_step_cb(cb: CallbackQuery, text: str, keyboard: InlineKeyboardMar
 
 
 def payload_summary(payload: dict) -> str:
+    branch_map = {
+        "print": "Рассчитать печать",
+        "scan": "3D-сканирование",
+        "idea": "Нет модели / Хочу придумать",
+        "dialog": "Диалог",
+    }
+    field_map = {
+        "technology": "Технология",
+        "material": "Материал",
+        "material_custom": "Другой материал",
+        "scan_type": "Тип сканирования",
+        "idea_type": "Категория",
+        "description": "Описание",
+        "file": "Файл",
+    }
+
     branch = payload.get("branch", "")
-    parts = [f"Тип заявки: {branch}"]
-    for k, v in payload.items():
-        if k == "branch" or not v:
+    parts = [f"Тип заявки: {branch_map.get(branch, branch)}"]
+    for key, value in payload.items():
+        if key == "branch" or value in (None, ""):
             continue
-        if isinstance(v, list):
-            v = ", ".join(v)
-        parts.append(f"• {k}: {v}")
+        label = field_map.get(key, key)
+        if isinstance(value, list):
+            value = ", ".join(str(item) for item in value)
+        parts.append(f"• {label}: {value}")
     return "\n".join(parts)
 
 
@@ -340,12 +355,18 @@ async def setup_internal_api(bot: Bot):
 
 
 def register_handlers(dp: Dispatcher, bot: Bot):
+    async def submit_handler(cb: CallbackQuery, state: FSMContext):
+        await on_submit(cb, state, bot)
+
+    async def file_handler(message: Message, state: FSMContext):
+        await on_file(message, state, bot)
+
     dp.message.register(on_start, CommandStart())
     dp.callback_query.register(on_menu, F.data.startswith("menu:"))
     dp.callback_query.register(on_nav, F.data.startswith("nav:"))
     dp.callback_query.register(on_set, F.data.startswith("set:"))
-    dp.callback_query.register(lambda c, s: on_submit(c, s, bot), F.data == "submit:order")
-    dp.message.register(lambda m, s: on_file(m, s, bot), F.content_type == ContentType.DOCUMENT)
+    dp.callback_query.register(submit_handler, F.data == "submit:order")
+    dp.message.register(file_handler, F.content_type == ContentType.DOCUMENT)
     dp.message.register(on_text, Form.step)
 
 
