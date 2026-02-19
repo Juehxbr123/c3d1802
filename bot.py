@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import os
 from pathlib import Path
 
 from aiohttp import web
@@ -32,6 +34,57 @@ def bot_cfg() -> dict[str, str]:
 def get_cfg(key: str, default: str = "") -> str:
     return bot_cfg().get(key, default)
 
+class Form(StatesGroup):
+    step = State()
+
+
+def kb(rows):
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def menu_kb():
+    return kb([
+        [InlineKeyboardButton(text="📐 Рассчитать печать", callback_data="menu:print")],
+        [InlineKeyboardButton(text="📡 3D-сканирование", callback_data="menu:scan")],
+        [InlineKeyboardButton(text="❓ Нет модели / Хочу придумать", callback_data="menu:idea")],
+        [InlineKeyboardButton(text="ℹ️ О нас", callback_data="menu:about")],
+    ])
+
+
+def nav_row(include_back=True):
+    row = []
+    if include_back:
+        row.append(InlineKeyboardButton(text="🔙 Назад", callback_data="nav:back"))
+    row.append(InlineKeyboardButton(text="🏠 Главное меню", callback_data="nav:menu"))
+    return row
+
+
+async def send_step(message: Message, text: str, keyboard: InlineKeyboardMarkup | None = None):
+    path = Path(settings.placeholder_photo_path)
+    if path.exists() and path.is_file():
+        try:
+            await message.answer_photo(photo=FSInputFile(str(path)), caption=text, reply_markup=keyboard)
+            return
+        except Exception:
+            logging.exception("Не удалось отправить фото шага")
+    await message.answer(text, reply_markup=keyboard)
+
+
+async def send_step_cb(cb: CallbackQuery, text: str, keyboard: InlineKeyboardMarkup | None = None):
+    await send_step(cb.message, text, keyboard)
+    await cb.answer()
+
+
+def payload_summary(payload: dict) -> str:
+    branch = payload.get("branch", "")
+    parts = [f"Тип заявки: {branch}"]
+    for k, v in payload.items():
+        if k == "branch" or not v:
+            continue
+        if isinstance(v, list):
+            v = ", ".join(v)
+        parts.append(f"• {k}: {v}")
+    return "\n".join(parts)
 
 def get_orders_chat_id() -> str:
     return get_cfg("orders_chat_id", settings.orders_chat_id)
@@ -122,6 +175,9 @@ def payload_summary(payload: dict) -> str:
 async def show_main(message: Message, state: FSMContext):
     await state.clear()
     await send_step(message, get_cfg("welcome_menu_msg", "Добро пожаловать в Chel3D 👋\nВыберите нужный пункт меню:"), menu_kb(), photo_ref_for("photo_main_menu"))
+async def show_main(message: Message, state: FSMContext):
+    await state.clear()
+    await send_step(message, "Добро пожаловать в Chel3D 👋\nВыберите нужный пункт меню:", menu_kb())
 
 
 async def start_order(cb: CallbackQuery, state: FSMContext, branch: str):
@@ -159,6 +215,7 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
             [InlineKeyboardButton(text="🤷 Не знаю", callback_data="set:technology:Не знаю")],
             nav_row(False),
         ]), photo_ref_for("photo_print"))
+        ]))
     elif step == "scan_type":
         await send_step_cb(cb, "Что нужно отсканировать?", kb([
             [InlineKeyboardButton(text="🧑 Человек", callback_data="set:scan_type:Человек")],
@@ -167,6 +224,7 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
             [InlineKeyboardButton(text="🤔 Другое", callback_data="set:scan_type:Другое")],
             nav_row(False),
         ]), photo_ref_for("photo_scan"))
+        ]))
     elif step == "idea_type":
         await send_step_cb(cb, "Выберите категорию:", kb([
             [InlineKeyboardButton(text="✏️ По фото/эскизу", callback_data="set:idea_type:По фото/эскизу")],
@@ -178,12 +236,16 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
         ]), photo_ref_for("photo_idea"))
     elif step == "about":
         await send_step_cb(cb, get_cfg("about_text", "Chel3D — 3D-печать, 3D-сканирование и разработка моделей."), kb([
+        ]))
+    elif step == "about":
+        await send_step_cb(cb, "Chel3D — 3D-печать, 3D-сканирование и разработка моделей.", kb([
             [InlineKeyboardButton(text="🏭 Оборудование", callback_data="about:eq")],
             [InlineKeyboardButton(text="🖼 Наши проекты", callback_data="about:projects")],
             [InlineKeyboardButton(text="📞 Контакты", callback_data="about:contacts")],
             [InlineKeyboardButton(text="📍 На карте", callback_data="about:map")],
             nav_row(False),
         ]), photo_ref_for("photo_about"))
+        ]))
 
 
 async def persist(state: FSMContext):
@@ -227,6 +289,32 @@ async def on_about_item(cb: CallbackQuery, state: FSMContext):
     }
     text_key, photo_key, default_text = mapping.get(key, ("about_text", "photo_about", "О нас"))
     await send_step_cb(cb, get_cfg(text_key, default_text), kb([nav_row()]), photo_ref_for(photo_key))
+
+
+def step_keyboard_for_print(payload: dict):
+    tech = payload.get("technology")
+    if tech == "FDM":
+        mat_rows = [[InlineKeyboardButton(text=t, callback_data=f"set:material:{t}")] for t in ["PET-G", "PLA", "PET-G Carbon", "TPU", "Нейлон", "🤔 Другой материал"]]
+    elif tech == "Фотополимер":
+        mat_rows = [[InlineKeyboardButton(text=t, callback_data=f"set:material:{t}")] for t in ["Стандартная", "ABS-Like", "TPU-Like", "Нейлон-Like", "🤔 Другая смола"]]
+    else:
+        mat_rows = [[InlineKeyboardButton(text="Пропустить", callback_data="set:material:Не выбрано")]]
+    mat_rows.append(nav_row())
+    return kb(mat_rows)
+
+
+async def on_start(message: Message, state: FSMContext):
+    await show_main(message, state)
+
+
+async def on_menu(cb: CallbackQuery, state: FSMContext):
+    branch = cb.data.split(":", 1)[1]
+    if branch == "about":
+        await render_step(cb, state, "about")
+        return
+    await start_order(cb, state, branch)
+    step = {"print": "print_tech", "scan": "scan_type", "idea": "idea_type"}[branch]
+    await render_step(cb, state, step)
 
 
 async def on_set(cb: CallbackQuery, state: FSMContext):
@@ -325,6 +413,16 @@ async def send_result_message(message: Message, state: FSMContext):
     payload = data.get("payload", {})
     text = f"Проверьте заявку:\n{payload_summary(payload)}\n\n💰 Уточнит менеджер после проверки."
     await send_step(message, text, kb([
+
+    database.add_order_file(data["order_id"], doc.file_id, doc.file_name or "model", doc.mime_type, doc.file_size, message.message_id, local_path)
+    await send_result_message(message, state)
+
+
+async def send_result(cb: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    payload = data.get("payload", {})
+    text = f"Проверьте заявку:\n{payload_summary(payload)}\n\n💰 Уточнит менеджер после проверки."
+    await send_step_cb(cb, text, kb([
         [InlineKeyboardButton(text="✅ Отправить заявку", callback_data="submit:order")],
         [InlineKeyboardButton(text="🔁 Новый расчет", callback_data="nav:menu")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="nav:menu")],
@@ -403,6 +501,73 @@ def register_handlers(dp: Dispatcher, bot: Bot):
     async def file_handler(message: Message, state: FSMContext):
         await on_file(message, state, bot)
 
+async def send_result_message(message: Message, state: FSMContext):
+    data = await state.get_data()
+    payload = data.get("payload", {})
+    text = f"Проверьте заявку:\n{payload_summary(payload)}\n\n💰 Уточнит менеджер после проверки."
+    await send_step(message, text, kb([
+        [InlineKeyboardButton(text="✅ Отправить заявку", callback_data="submit:order")],
+        [InlineKeyboardButton(text="🔁 Новый расчет", callback_data="nav:menu")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="nav:menu")],
+    ]))
+
+
+async def on_submit(cb: CallbackQuery, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    order_id = data["order_id"]
+    payload = data.get("payload", {})
+    summary = payload_summary(payload)
+    database.finalize_order(order_id, summary)
+    database.add_order_message(order_id, "in", "Заявка отправлена")
+
+    if settings.orders_chat_id:
+        try:
+            await bot.send_message(settings.orders_chat_id, f"Новая заявка #{order_id}\n{summary}")
+        except Exception:
+            logging.exception("Не удалось отправить заявку в группу")
+
+    await send_step_cb(cb, "Спасибо! Заявка отправлена менеджеру ✅", menu_kb())
+    await state.clear()
+
+
+async def on_nav(cb: CallbackQuery, state: FSMContext):
+    action = cb.data.split(":", 1)[1]
+    if action == "menu":
+        await show_main(cb.message, state)
+        await cb.answer()
+    elif action == "back":
+        await go_back(cb, state)
+
+
+async def internal_send_message(request: web.Request):
+    if settings.internal_api_key and request.headers.get("X-Internal-Key") != settings.internal_api_key:
+        return web.json_response({"ok": False, "error": "unauthorized"}, status=401)
+    data = await request.json()
+    user_id = data.get("user_id")
+    text = data.get("text", "")
+    order_id = data.get("order_id")
+    bot: Bot = request.app["bot"]
+    try:
+        sent = await bot.send_message(user_id, text)
+        if order_id:
+            database.add_order_message(order_id, "out", text, sent.message_id)
+        return web.json_response({"ok": True, "message_id": sent.message_id})
+    except Exception:
+        return web.json_response({"ok": False, "error": "Не удалось отправить сообщение в Telegram"}, status=400)
+
+
+async def setup_internal_api(bot: Bot):
+    app = web.Application()
+    app["bot"] = bot
+    app.router.add_post("/internal/sendMessage", internal_send_message)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, settings.internal_api_host, settings.internal_api_port)
+    await site.start()
+    return runner
+
+
+def register_handlers(dp: Dispatcher, bot: Bot):
     dp.message.register(on_start, CommandStart())
     dp.callback_query.register(on_menu, F.data.startswith("menu:"))
     dp.callback_query.register(on_nav, F.data.startswith("nav:"))
@@ -410,6 +575,8 @@ def register_handlers(dp: Dispatcher, bot: Bot):
     dp.callback_query.register(on_about_item, F.data.startswith("about:"))
     dp.callback_query.register(submit_handler, F.data == "submit:order")
     dp.message.register(file_handler, F.content_type == ContentType.DOCUMENT)
+    dp.callback_query.register(lambda c, s: on_submit(c, s, bot), F.data == "submit:order")
+    dp.message.register(lambda m, s: on_file(m, s, bot), F.content_type == ContentType.DOCUMENT)
     dp.message.register(on_text, Form.step)
 
 

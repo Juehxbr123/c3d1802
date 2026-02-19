@@ -73,3 +73,9 @@ async def update_bot_settings(data: dict[str, Any], payload: dict = Depends(veri
         if key in data:
             database.set_bot_config(key, str(data[key]))
     return {"message": "Системные настройки сохранены"}
+
+@router.put("/")
+async def update_bot_config(data: dict[str, str], payload: dict = Depends(verify_token)):
+    for key, value in data.items():
+        database.set_bot_config(key, value)
+    return {"message": "Настройки сохранены"}
