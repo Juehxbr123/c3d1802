@@ -42,7 +42,7 @@ const MainLayout = () => {
         {
             key: '/dashboard',
             icon: <DashboardOutlined />,
-            label: 'Дашборд',
+            label: 'Сводка',
         },
         {
             key: '/orders',
@@ -73,7 +73,7 @@ const MainLayout = () => {
         <Layout style={{ minHeight: '100vh' }}>
             <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed}>
                 <div style={{ height: 32, margin: 16, background: 'rgba(255, 255, 255, 0.2)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '10px' }}>
-                    CRM TURNER
+                    CRM CHEL3D
                 </div>
                 <Menu
                     theme="dark"
