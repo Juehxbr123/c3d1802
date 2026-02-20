@@ -18,7 +18,6 @@ const textFields = {
     ['btn_menu_scan', 'Кнопка главного меню: сканирование'],
     ['btn_menu_idea', 'Кнопка главного меню: идея'],
     ['btn_menu_about', 'Кнопка главного меню: о нас'],
-    ['btn_menu_goods', 'Кнопка главного меню: готовые товары'],
   ],
   print: [
     ['text_print_tech', 'Описание шага выбора технологии'],
@@ -56,14 +55,6 @@ const textFields = {
     ['btn_idea_other', 'Кнопка идея: другое'],
     ['text_describe_task', 'Описание шага свободного ввода'],
   ],
-  goods: [
-    ['text_goods_type', 'Описание шага готовых товаров'],
-    ['btn_goods_sport', 'Кнопка товары: спорт'],
-    ['btn_goods_decor', 'Кнопка товары: интерьер и декор'],
-    ['btn_goods_accessories', 'Кнопка товары: аксессуары'],
-    ['btn_goods_gaming', 'Кнопка товары: для геймеров'],
-    ['btn_goods_other', 'Кнопка товары: другое'],
-  ],
   about: [
     ['about_text', 'Описание раздела «О нас»'],
     ['btn_about_equipment', 'Кнопка «Оборудование»'],
@@ -82,7 +73,6 @@ const toggleFields = [
   ['enabled_menu_scan', 'Показывать кнопку меню: сканирование'],
   ['enabled_menu_idea', 'Показывать кнопку меню: идея'],
   ['enabled_menu_about', 'Показывать кнопку меню: о нас'],
-  ['enabled_menu_goods', 'Показывать кнопку меню: готовые товары'],
   ['enabled_print_fdm', 'Показывать кнопку FDM'],
   ['enabled_print_resin', 'Показывать кнопку фотополимер'],
   ['enabled_print_unknown', 'Показывать кнопку не знаю'],
@@ -95,11 +85,6 @@ const toggleFields = [
   ['enabled_idea_master', 'Показывать кнопку идея: мастер-модель'],
   ['enabled_idea_sign', 'Показывать кнопку идея: вывески'],
   ['enabled_idea_other', 'Показывать кнопку идея: другое'],
-  ['enabled_goods_sport', 'Показывать кнопку товары: спорт'],
-  ['enabled_goods_decor', 'Показывать кнопку товары: интерьер и декор'],
-  ['enabled_goods_accessories', 'Показывать кнопку товары: аксессуары'],
-  ['enabled_goods_gaming', 'Показывать кнопку товары: для геймеров'],
-  ['enabled_goods_other', 'Показывать кнопку товары: другое'],
   ['enabled_about_equipment', 'Показывать кнопку о нас: оборудование'],
   ['enabled_about_projects', 'Показывать кнопку о нас: проекты'],
   ['enabled_about_contacts', 'Показывать кнопку о нас: контакты'],
@@ -116,7 +101,6 @@ const photoFields = [
   ['photo_about_projects', 'Фото раздела проекты'],
   ['photo_about_contacts', 'Фото раздела контакты'],
   ['photo_about_map', 'Фото раздела карта'],
-  ['photo_goods', 'Фото ветки готовых товаров'],
 ];
 
 const BotConfig = () => {
@@ -189,7 +173,6 @@ const BotConfig = () => {
           {renderTextSection('Ветка: Рассчитать печать', textFields.print)}
           {renderTextSection('Ветка: 3D-сканирование', textFields.scan)}
           {renderTextSection('Ветка: Нет модели / Хочу придумать', textFields.idea)}
-          {renderTextSection('Ветка: Наши готовые товары', textFields.goods)}
           {renderTextSection('Ветка: О нас', textFields.about)}
           <Button type='primary' icon={<SaveOutlined />} htmlType='submit' loading={loading}>Сохранить тексты</Button>
         </Form>
