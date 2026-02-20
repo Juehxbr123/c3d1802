@@ -27,6 +27,17 @@ TEXT_KEYS = [
     "btn_print_resin",
     "btn_print_unknown",
     "text_select_material",
+    "btn_mat_petg",
+    "btn_mat_pla",
+    "btn_mat_petg_carbon",
+    "btn_mat_tpu",
+    "btn_mat_nylon",
+    "btn_mat_other",
+    "btn_resin_standard",
+    "btn_resin_abs",
+    "btn_resin_tpu",
+    "btn_resin_nylon",
+    "btn_resin_other",
     "text_describe_material",
     "text_attach_file",
     # Скан
@@ -72,6 +83,22 @@ TOGGLE_KEYS = [
     "enabled_menu_scan",
     "enabled_menu_idea",
     "enabled_menu_about",
+    "enabled_print_fdm",
+    "enabled_print_resin",
+    "enabled_print_unknown",
+    "enabled_scan_human",
+    "enabled_scan_object",
+    "enabled_scan_industrial",
+    "enabled_scan_other",
+    "enabled_idea_photo",
+    "enabled_idea_award",
+    "enabled_idea_master",
+    "enabled_idea_sign",
+    "enabled_idea_other",
+    "enabled_about_equipment",
+    "enabled_about_projects",
+    "enabled_about_contacts",
+    "enabled_about_map",
 ]
 
 SETTINGS_KEYS = [
@@ -94,9 +121,12 @@ async def get_bot_config(payload: dict = Depends(verify_token)) -> dict[str, Any
 
 @router.put("/")
 async def update_bot_config(data: dict[str, str], payload: dict = Depends(verify_token)):
-    for key, value in data.items():
-        database.set_bot_config(key, str(value))
-    return {"message": "Настройки сохранены"}
+    try:
+        database.set_bot_config_many({str(k): "" if v is None else str(v) for k, v in (data or {}).items()})
+        return {"message": "Настройки сохранены"}
+    except Exception as exc:
+        logger.exception("Ошибка сохранения настроек бота")
+        raise HTTPException(status_code=500, detail="Не удалось сохранить настройки") from exc
 
 
 @router.get("/texts")
@@ -110,7 +140,7 @@ async def update_bot_texts(data: dict[str, Any], payload: dict = Depends(verify_
     try:
         to_save: dict[str, str] = {}
         for k in TEXT_KEYS:
-            if k in data:
+            if k in (data or {}):
                 v = data.get(k)
                 to_save[k] = "" if v is None else str(v)
         database.set_bot_config_many(to_save)
@@ -136,7 +166,7 @@ async def update_bot_settings(data: dict[str, Any], payload: dict = Depends(veri
         keys = SETTINGS_KEYS + PHOTO_KEYS
         to_save: dict[str, str] = {}
         for k in keys:
-            if k not in data:
+            if k not in (data or {}):
                 continue
             v = data.get(k)
             if k in TOGGLE_KEYS:

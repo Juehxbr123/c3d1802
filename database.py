@@ -98,7 +98,7 @@ def set_bot_config_many(items: dict[str, str]) -> None:
 def create_order(user_id: int, username: str | None, full_name: str | None, branch: str) -> int:
     """
     Creates a new order in 'draft' status.
-    Expects orders table with at least:
+    Expects 'orders' table with at least:
       id, user_id, username, full_name, branch, status, order_payload, summary, created_at, updated_at
     """
     with db_cursor() as (_, cur):
@@ -113,6 +113,7 @@ def create_order(user_id: int, username: str | None, full_name: str | None, bran
 
 
 def find_or_create_active_order(user_id: int, username: str | None, full_name: str | None) -> int:
+    """Returns last active order id for user or creates a new 'dialog' order."""
     with db_cursor() as (_, cur):
         cur.execute(
             """
@@ -150,16 +151,14 @@ def update_order_payload(order_id: int, payload: dict[str, Any], summary: str | 
 
 
 def finalize_order(order_id: int, summary: str | None = None) -> None:
-    """
-    Converts draft -> new (or keeps submitted/new), sets summary.
-    """
+    """Converts draft -> new (or keeps other allowed status), sets summary."""
     with db_cursor() as (_, cur):
         cur.execute("SELECT status FROM orders WHERE id=%s", (order_id,))
         row = cur.fetchone()
         if not row:
             return
         status = row.get("status")
-        new_status = "new" if status in ("draft", None, "") else status
+        new_status = "new" if status in ("draft", None, "") else str(status)
         if new_status not in ALLOWED_STATUSES:
             new_status = "new"
         cur.execute(
@@ -169,18 +168,17 @@ def finalize_order(order_id: int, summary: str | None = None) -> None:
 
 
 def get_orders_paginated(limit: int, offset: int, status_filter: str | None = None) -> list[dict[str, Any]]:
-    if status_filter:
-        with db_cursor() as (_, cur):
+    with db_cursor() as (_, cur):
+        if status_filter:
             cur.execute(
                 "SELECT * FROM orders WHERE status=%s ORDER BY created_at DESC LIMIT %s OFFSET %s",
                 (status_filter, limit, offset),
             )
-            return [dict(r) for r in cur.fetchall()]
-    with db_cursor() as (_, cur):
-        cur.execute(
-            "SELECT * FROM orders ORDER BY created_at DESC LIMIT %s OFFSET %s",
-            (limit, offset),
-        )
+        else:
+            cur.execute(
+                "SELECT * FROM orders ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                (limit, offset),
+            )
         return [dict(r) for r in cur.fetchall()]
 
 
@@ -224,7 +222,9 @@ def add_order_file(
     with db_cursor() as (_, cur):
         cur.execute(
             """
-            INSERT INTO order_files (order_id, telegram_file_id, original_name, mime_type, file_size, telegram_message_id, local_path)
+            INSERT INTO order_files (
+              order_id, telegram_file_id, original_name, mime_type, file_size, telegram_message_id, local_path
+            )
             VALUES (%s,%s,%s,%s,%s,%s,%s)
             """,
             (order_id, telegram_file_id, original_name, mime_type, file_size, telegram_message_id, local_path),
@@ -240,7 +240,12 @@ def list_order_files(order_id: int) -> list[dict[str, Any]]:
 # -----------------------------
 # Messages
 # -----------------------------
-def add_order_message(order_id: int, direction: str, message_text: str, telegram_message_id: int | None = None) -> None:
+def add_order_message(
+    order_id: int,
+    direction: str,
+    message_text: str,
+    telegram_message_id: int | None = None,
+) -> None:
     with db_cursor() as (_, cur):
         cur.execute(
             """

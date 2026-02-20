@@ -386,31 +386,7 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
             [InlineKeyboardButton(text=get_cfg("btn_about_map", "📍 На карте"), callback_data="about:map")],
             nav_row(False),
         ]
-        await send_step_cb(
-            cb,
-            get_cfg("about_text", "Chel3D — 3D-печать, 3D-сканирование и разработка моделей."),
-            kb(rows),
-            photo_ref_for("photo_about"),
-        )
-        return
-
-    if step == "result":
-        text = (
-            f"{get_cfg('text_result_prefix', 'Проверьте заявку:')}\n"
-            f"{payload_summary(payload)}\n\n"
-            f"{get_cfg('text_price_note', '💰 Уточнит менеджер после проверки.')}"
-        )
-        await send_step_cb(
-            cb,
-            text,
-            kb(
-                [
-                    [InlineKeyboardButton(text="✅ Отправить заявку", callback_data="submit")],
-                    [InlineKeyboardButton(text="🔁 Новый расчет", callback_data="nav:menu")],
-                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="nav:menu")],
-                ]
-            ),
-        )
+        await send_step_cb(cb, get_cfg("about_text", "Chel3D — 3D-печать, 3D-сканирование и разработка моделей."), kb(rows), photo_ref_for("photo_about"))
         return
 
     # fallback
@@ -422,270 +398,251 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
 # -----------------------------
 # Handlers
 # -----------------------------
-async def on_start(message: Message, state: FSMContext):
+dp = Dispatcher(storage=MemoryStorage())
+
+
+@dp.message(CommandStart())
+async def cmd_start(message: Message, state: FSMContext):
     await show_main(message, state)
 
 
+@dp.callback_query(F.data.startswith("menu:"))
 async def on_menu(cb: CallbackQuery, state: FSMContext):
-    _, branch = (cb.data or "").split(":", 1)
+    branch = cb.data.split(":", 1)[1]
+    if branch == "about":
+        await start_order(cb, state, "about")
+        return
     await start_order(cb, state, branch)
 
 
-async def on_nav(cb: CallbackQuery, state: FSMContext):
-    _, cmd = (cb.data or "").split(":", 1)
-    if cmd == "menu":
-        if cb.message:
-            await show_main(cb.message, state)
-        await cb.answer()
-        return
-    if cmd == "back":
-        await go_back(cb, state)
-        return
+@dp.callback_query(F.data == "nav:menu")
+async def on_nav_menu(cb: CallbackQuery, state: FSMContext):
+    if cb.message:
+        await show_main(cb.message, state)
     await cb.answer()
 
 
+@dp.callback_query(F.data == "nav:back")
+async def on_nav_back(cb: CallbackQuery, state: FSMContext):
+    await go_back(cb, state)
+
+
+@dp.callback_query(F.data.startswith("about:"))
+async def on_about(cb: CallbackQuery, state: FSMContext):
+    key = cb.data.split(":", 1)[1]
+    mapping = {
+        "eq": ("about_equipment_text", "photo_about_equipment"),
+        "projects": ("about_projects_text", "photo_about_projects"),
+        "contacts": ("about_contacts_text", "photo_about_contacts"),
+        "map": ("about_map_text", "photo_about_map"),
+    }
+    text_key, photo_key = mapping.get(key, ("about_text", "photo_about"))
+    await send_step_cb(cb, get_cfg(text_key, ""), kb([nav_row()]), photo_ref_for(photo_key))
+
+
+@dp.callback_query(F.data.startswith("set:"))
 async def on_set(cb: CallbackQuery, state: FSMContext):
-    data = cb.data or ""
-    parts = data.split(":", 2)
-    if len(parts) != 3:
-        await cb.answer()
-        return
+    _, field, value = cb.data.split(":", 2)
+    data = await state.get_data()
+    payload: dict[str, Any] = data.get("payload", {}) or {}
+    waiting_text = data.get("waiting_text")
 
-    _, key, value = parts
-    sdata = await state.get_data()
-    payload: dict[str, Any] = sdata.get("payload", {})
-    payload[key] = value
-    await state.update_data(payload=payload)
-    await persist(state)
-
-    # routing
-    if key == "technology":
+    if field == "technology":
+        payload["technology"] = value
+        await state.update_data(payload=payload)
+        await persist(state)
         await render_step(cb, state, "print_material")
         return
 
-    if key == "material":
-        if value in {"🤔 Другой материал", "🤔 Другая смола"}:
+    if field == "material":
+        if value == "🤔 Другой материал":
+            payload["material"] = "Другой материал"
+            await state.update_data(payload=payload)
+            await persist(state)
             await render_step(cb, state, "print_material_custom")
             return
-        await render_step(cb, state, "attach_file")
-        return
 
-    if key == "scan_type":
+        payload["material"] = value
+        await state.update_data(payload=payload)
+        await persist(state)
         await render_step(cb, state, "describe_task")
         return
 
-    if key == "idea_type":
+    if field == "scan_type":
+        payload["scan_type"] = value
+        await state.update_data(payload=payload)
+        await persist(state)
         await render_step(cb, state, "describe_task")
         return
 
-    if key == "file":
-        await render_step(cb, state, "result")
+    if field == "idea_type":
+        payload["idea_type"] = value
+        await state.update_data(payload=payload)
+        await persist(state)
+        await render_step(cb, state, "describe_task")
         return
 
-    await render_step(cb, state, "result")
+    if field == "file":
+        if value == "skip":
+            payload["file"] = "Пропущено"
+            await state.update_data(payload=payload)
+            await persist(state)
 
+            order_id = int((await state.get_data()).get("order_id"))
+            database.finalize_order(order_id, payload_summary(payload))
 
-async def on_about(cb: CallbackQuery, state: FSMContext):
-    _, part = (cb.data or "").split(":", 1)
-    texts = {
-        "eq": ("about_equipment_text", "Оборудование"),
-        "projects": ("about_projects_text", "Наши проекты"),
-        "contacts": ("about_contacts_text", "Контакты"),
-        "map": ("about_map_text", "На карте"),
-    }
-    key, title = texts.get(part, ("about_text", "О нас"))
-    rows = [nav_row()]
-    await send_step_cb(cb, get_cfg(key, title), kb([rows[0]]), photo_ref_for("photo_about"))
+            msg = get_cfg("text_submit_ok", "✅ Заявка отправлена! Мы скоро свяжемся с вами.")
+            await send_step_cb(cb, msg, kb([nav_row(False)]), photo_ref_for("photo_main_menu"))
 
+            await notify_orders_chat(cb, payload, order_id)
+            return
 
-async def on_submit(cb: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    order_id = data.get("order_id")
-    payload: dict[str, Any] = data.get("payload", {})
-    if not order_id:
-        if cb.message:
-            await show_main(cb.message, state)
-        await cb.answer()
-        return
-
-    summary = payload_summary(payload)
-    try:
-        database.finalize_order(int(order_id), summary)
-    except Exception:
-        logger.exception("Не удалось финализировать заявку")
-
-    # send to group/chat
-    chat_id = get_orders_chat_id()
-    if chat_id:
-        try:
-            bot: Bot = cb.bot
-            await bot.send_message(chat_id=chat_id, text=summary)
-        except Exception:
-            logger.exception("Не удалось отправить заявку в чат заказов")
-
-    if cb.message:
-        await send_step(
-            cb.message,
-            get_cfg("text_submit_ok", "✅ Заявка отправлена! Менеджер свяжется с вами."),
-            kb([nav_row(False)]),
-            photo_ref_for("photo_main_menu"),
-        )
+    # unknown
     await cb.answer()
-    await state.clear()
 
 
+@dp.message(F.content_type == ContentType.TEXT)
 async def on_text(message: Message, state: FSMContext):
-    if message.from_user is None:
-        return
-
     data = await state.get_data()
-    waiting = data.get("waiting_text")
-    if not waiting:
-        # keep dialog messages as "dialog" order
-        try:
-            order_id = database.find_or_create_active_order(
-                message.from_user.id, message.from_user.username, message.from_user.full_name
-            )
-            database.add_order_message(order_id, "in", message.text or "", message.message_id)
-        except Exception:
-            logger.exception("Не удалось сохранить входящее сообщение")
+    waiting_text = data.get("waiting_text")
+    if not waiting_text:
         return
 
-    payload: dict[str, Any] = data.get("payload", {})
-    if waiting == "material_custom":
-        payload["material_custom"] = (message.text or "").strip()
+    payload: dict[str, Any] = data.get("payload", {}) or {}
+    if waiting_text == "material_custom":
+        payload["material_custom"] = message.text.strip()
         await state.update_data(payload=payload, waiting_text=None)
         await persist(state)
-
-        fake_cb = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="noop")
-        await render_step(fake_cb, state, "attach_file")
+        await send_step(message, "✅ Принято.", kb([nav_row()]))
         return
 
-    if waiting == "description":
-        payload["description"] = (message.text or "").strip()
+    if waiting_text == "description":
+        payload["description"] = message.text.strip()
         await state.update_data(payload=payload, waiting_text=None)
         await persist(state)
-
-        fake_cb = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="noop")
-        if payload.get("branch") == "print":
-            await render_step(fake_cb, state, "attach_file")
-        else:
-            await render_step(fake_cb, state, "result")
+        await send_step(message, "✅ Принято. Теперь можно прикрепить файл.", kb([nav_row()]))
+        # after description always ask for file
+        cb_fake = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", data="", message=message)
+        await render_step(cb_fake, state, "attach_file")  # type: ignore[arg-type]
         return
 
 
-async def on_document(message: Message, state: FSMContext):
-    if message.from_user is None:
-        return
-
+@dp.message(F.content_type.in_({ContentType.DOCUMENT, ContentType.PHOTO}))
+async def on_file(message: Message, state: FSMContext):
     data = await state.get_data()
-    waiting = data.get("waiting_text")
-    if waiting != "file":
+    if data.get("waiting_text") != "file":
         return
 
-    doc = message.document
-    if not doc:
+    order_id = int(data.get("order_id"))
+    payload: dict[str, Any] = data.get("payload", {}) or {}
+
+    file_id = None
+    filename = None
+    mime = None
+    size = None
+
+    if message.document:
+        file_id = message.document.file_id
+        filename = message.document.file_name
+        mime = message.document.mime_type
+        size = message.document.file_size
+    elif message.photo:
+        p = message.photo[-1]
+        file_id = p.file_id
+        filename = "photo.jpg"
+        mime = "image/jpeg"
+        size = p.file_size
+
+    if not file_id:
+        await message.answer("Не смог распознать файл. Попробуйте ещё раз.")
         return
 
-    file_id = doc.file_id
-    file_name = doc.file_name or "file"
-    mime = doc.mime_type
-    size = doc.file_size
-
-    local_path = None
     try:
-        bot: Bot = message.bot
-        tg_file = await bot.get_file(file_id)
-        dest = UPLOADS_DIR / f"{message.from_user.id}_{doc.file_unique_id}_{file_name}"
-        await bot.download_file(tg_file.file_path, destination=dest)
-        local_path = str(dest)
-    except Exception:
-        logger.exception("Не удалось скачать файл локально")
-
-    try:
-        order_id = int(data["order_id"])
-        database.add_order_file(order_id, file_id, file_name, mime, size, message.message_id, local_path)
+        database.add_order_file(order_id, file_id, filename, mime, size, message.message_id, None)
     except Exception:
         logger.exception("Не удалось сохранить файл в БД")
 
-    payload: dict[str, Any] = data.get("payload", {})
-    payload["file"] = file_name
+    payload["file"] = filename or "Файл"
     await state.update_data(payload=payload, waiting_text=None)
     await persist(state)
 
-    fake_cb = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="noop")
-    await render_step(fake_cb, state, "result")
+    database.finalize_order(order_id, payload_summary(payload))
+    await message.answer(get_cfg("text_submit_ok", "✅ Заявка отправлена! Мы скоро свяжемся с вами."), reply_markup=kb([nav_row(False)]))
+    await notify_orders_chat_message(message, payload, order_id)
+
+
+async def notify_orders_chat(cb: CallbackQuery, payload: dict[str, Any], order_id: int) -> None:
+    if not cb.bot:
+        return
+    chat_id = get_orders_chat_id()
+    if not chat_id:
+        return
+    try:
+        await cb.bot.send_message(chat_id=chat_id, text=f"🆕 Новая заявка #{order_id}\n\n{payload_summary(payload)}")
+    except Exception:
+        logger.exception("Не удалось отправить заявку в чат заказов")
+
+
+async def notify_orders_chat_message(message: Message, payload: dict[str, Any], order_id: int) -> None:
+    chat_id = get_orders_chat_id()
+    if not chat_id:
+        return
+    try:
+        await message.bot.send_message(chat_id=chat_id, text=f"🆕 Новая заявка #{order_id}\n\n{payload_summary(payload)}")
+    except Exception:
+        logger.exception("Не удалось отправить заявку в чат заказов")
 
 
 # -----------------------------
-# Internal API (backend -> bot)
+# Internal API (for admin -> user DM)
 # -----------------------------
 async def internal_send_message(request: web.Request) -> web.Response:
     key = request.headers.get("X-Internal-Key", "")
     if key != getattr(settings, "internal_api_key", ""):
-        return web.json_response({"error": "forbidden"}, status=403)
+        return web.json_response({"error": "Unauthorized"}, status=401)
 
     try:
-        body = await request.json()
+        data = await request.json()
     except Exception:
-        return web.json_response({"error": "invalid json"}, status=400)
+        return web.json_response({"error": "Bad JSON"}, status=400)
 
-    user_id = body.get("user_id")
-    text = (body.get("text") or "").strip()
-    order_id = body.get("order_id")
+    user_id = data.get("user_id")
+    text = (data.get("text") or "").strip()
+    order_id = data.get("order_id")
 
     if not user_id or not text:
         return web.json_response({"error": "user_id and text are required"}, status=400)
 
-    bot: Bot = request.app["bot"]
     try:
-        sent = await bot.send_message(chat_id=user_id, text=text)
+        bot: Bot = request.app["bot"]
+        msg = await bot.send_message(chat_id=int(user_id), text=text)
+        try:
+            database.add_order_message(int(order_id), "out", text, msg.message_id)
+        except Exception:
+            logger.exception("Не удалось сохранить исходящее сообщение (internal)")
+        return web.json_response({"ok": True, "message_id": msg.message_id})
     except Exception as exc:
-        logger.exception("Не удалось отправить сообщение пользователю")
-        return web.json_response({"error": str(exc)}, status=400)
-
-    try:
-        if order_id:
-            database.add_order_message(int(order_id), "out", text, getattr(sent, "message_id", None))
-        else:
-            oid = database.find_or_create_active_order(user_id, None, None)
-            database.add_order_message(int(oid), "out", text, getattr(sent, "message_id", None))
-    except Exception:
-        logger.exception("Не удалось сохранить исходящее сообщение в БД")
-
-    return web.json_response({"ok": True, "message_id": getattr(sent, "message_id", None)})
+        logger.exception("Failed to send message")
+        return web.json_response({"error": str(exc)}, status=500)
 
 
-async def start_internal_api(bot: Bot) -> web.AppRunner:
+async def start_internal_server(bot: Bot) -> web.AppRunner:
     app = web.Application()
     app["bot"] = bot
     app.router.add_post("/internal/sendMessage", internal_send_message)
-
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=int(getattr(settings, "internal_api_port", 8081)))
+    site = web.TCPSite(runner, "0.0.0.0", int(getattr(settings, "internal_port", 8081)))
     await site.start()
-    logger.info("Internal API started on 0.0.0.0:%s", getattr(settings, "internal_api_port", 8081))
     return runner
 
 
-async def main() -> None:
+async def main():
     database.init_db_if_needed()
 
     bot = Bot(token=settings.bot_token)
-    dp = Dispatcher(storage=MemoryStorage())
+    runner = await start_internal_server(bot)
 
-    dp.message.register(on_start, CommandStart())
-    dp.callback_query.register(on_menu, F.data.startswith("menu:"))
-    dp.callback_query.register(on_nav, F.data.startswith("nav:"))
-    dp.callback_query.register(on_set, F.data.startswith("set:"))
-    dp.callback_query.register(on_about, F.data.startswith("about:"))
-    dp.callback_query.register(on_submit, F.data == "submit")
-
-    dp.message.register(on_document, F.content_type == ContentType.DOCUMENT)
-    dp.message.register(on_text, F.content_type == ContentType.TEXT)
-
-    runner = await start_internal_api(bot)
     try:
         await dp.start_polling(bot)
     finally:
