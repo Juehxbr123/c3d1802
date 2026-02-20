@@ -74,13 +74,11 @@ async def update_order(order_id: int, order_update: OrderUpdate, payload: dict =
     current_order = database.get_order(order_id)
     if not current_order:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-
     if order_update.status:
         try:
             database.update_order_status(order_id, order_update.status)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Недопустимый статус") from exc
-
     return {"message": "Заявка обновлена"}
 
 
@@ -143,8 +141,8 @@ async def send_message(order_id: int, body: MessageCreate, payload: dict = Depen
         raise HTTPException(status_code=400, detail=detail)
 
     try:
-        database.add_order_message(order_id, "out", text)
+        database.add_order_message(int(order_id), "out", text, None)
     except Exception:
-        logger.exception("Не удалось сохранить сообщение в БД (backend)")
+        logger.exception("Не удалось сохранить исходящее сообщение")
 
-    return {"ok": True}
+    return {"message": "Сообщение отправлено"}

@@ -1,7 +1,7 @@
 import json
 import time
 from contextlib import contextmanager
-from typing import Any, Iterable
+from typing import Any
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -210,71 +210,52 @@ def update_order_status(order_id: int, status: str) -> None:
 
 
 # -----------------------------
+# Files
+# -----------------------------
+def add_order_file(
+    order_id: int,
+    telegram_file_id: str,
+    original_name: str | None,
+    mime_type: str | None,
+    file_size: int | None,
+    telegram_message_id: int | None = None,
+    local_path: str | None = None,
+) -> None:
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO order_files (order_id, telegram_file_id, original_name, mime_type, file_size, telegram_message_id, local_path)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (order_id, telegram_file_id, original_name, mime_type, file_size, telegram_message_id, local_path),
+        )
+
+
+def list_order_files(order_id: int) -> list[dict[str, Any]]:
+    with db_cursor() as (_, cur):
+        cur.execute("SELECT * FROM order_files WHERE order_id=%s ORDER BY created_at DESC", (order_id,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+# -----------------------------
 # Messages
 # -----------------------------
-def add_order_message(order_id: int, direction: str, text: str, telegram_message_id: int | None = None) -> int:
+def add_order_message(order_id: int, direction: str, message_text: str, telegram_message_id: int | None = None) -> None:
     with db_cursor() as (_, cur):
         cur.execute(
             """
             INSERT INTO order_messages (order_id, direction, message_text, telegram_message_id)
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s,%s,%s,%s)
             """,
-            (order_id, direction, text, telegram_message_id),
+            (order_id, direction, message_text, telegram_message_id),
         )
-        return int(cur.lastrowid)
 
 
 def list_order_messages(order_id: int, limit: int = 30) -> list[dict[str, Any]]:
     with db_cursor() as (_, cur):
         cur.execute(
-            """
-            SELECT * FROM order_messages
-            WHERE order_id=%s
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
+            "SELECT * FROM order_messages WHERE order_id=%s ORDER BY created_at DESC LIMIT %s",
             (order_id, limit),
         )
-        rows = [dict(r) for r in cur.fetchall()]
-        rows.reverse()
-        return rows
-
-
-# -----------------------------
-# Files
-# -----------------------------
-def add_order_file(
-    order_id: int,
-    file_id: str,
-    filename: str,
-    mime: str | None,
-    size: int | None,
-    telegram_message_id: int | None = None,
-    local_path: str | None = None,
-) -> int:
-    with db_cursor() as (_, cur):
-        cur.execute(
-            """
-            INSERT INTO order_files
-              (order_id, telegram_file_id, telegram_message_id, original_name, mime_type, file_size, local_path)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (order_id, file_id, telegram_message_id, filename, mime, size, local_path),
-        )
-        return int(cur.lastrowid)
-
-
-def list_order_files(order_id: int, limit: int = 50) -> list[dict[str, Any]]:
-    with db_cursor() as (_, cur):
-        cur.execute(
-            """
-            SELECT * FROM order_files
-            WHERE order_id=%s
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            (order_id, limit),
-        )
-        rows = [dict(r) for r in cur.fetchall()]
-        rows.reverse()
-        return rows
+        rows = cur.fetchall()
+        return list(reversed([dict(r) for r in rows]))

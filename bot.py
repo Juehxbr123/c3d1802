@@ -1,7 +1,5 @@
 import asyncio
-import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -85,13 +83,41 @@ def kb(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
 def menu_kb() -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if cfg_bool("enabled_menu_print", True):
-        rows.append([InlineKeyboardButton(text=get_cfg("btn_menu_print", "📐 Рассчитать печать"), callback_data="menu:print")])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=get_cfg("btn_menu_print", "📐 Рассчитать печать"),
+                    callback_data="menu:print",
+                )
+            ]
+        )
     if cfg_bool("enabled_menu_scan", True):
-        rows.append([InlineKeyboardButton(text=get_cfg("btn_menu_scan", "📡 3D-сканирование"), callback_data="menu:scan")])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=get_cfg("btn_menu_scan", "📡 3D-сканирование"),
+                    callback_data="menu:scan",
+                )
+            ]
+        )
     if cfg_bool("enabled_menu_idea", True):
-        rows.append([InlineKeyboardButton(text=get_cfg("btn_menu_idea", "❓ Нет модели / Хочу придумать"), callback_data="menu:idea")])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=get_cfg("btn_menu_idea", "❓ Нет модели / Хочу придумать"),
+                    callback_data="menu:idea",
+                )
+            ]
+        )
     if cfg_bool("enabled_menu_about", True):
-        rows.append([InlineKeyboardButton(text=get_cfg("btn_menu_about", "ℹ️ О нас"), callback_data="menu:about")])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=get_cfg("btn_menu_about", "ℹ️ О нас"),
+                    callback_data="menu:about",
+                )
+            ]
+        )
     if not rows:
         rows = [[InlineKeyboardButton(text="ℹ️ О нас", callback_data="menu:about")]]
     return kb(rows)
@@ -220,7 +246,10 @@ async def show_main(message: Message, state: FSMContext) -> None:
     await state.clear()
     await send_step(
         message,
-        get_cfg("welcome_menu_msg", "Привет! 👋 Я бот Chel3D.\nВыберите, что вам нужно — и я соберу заявку по шагам."),
+        get_cfg(
+            "welcome_menu_msg",
+            "Привет! 👋 Я бот Chel3D.\nВыберите, что вам нужно — и я соберу заявку по шагам.",
+        ),
         menu_kb(),
         photo_ref_for("photo_main_menu"),
     )
@@ -240,7 +269,8 @@ async def start_order(cb: CallbackQuery, state: FSMContext, branch: str) -> None
     elif branch == "about":
         await render_step(cb, state, "about")
     else:
-        await show_main(cb.message, state)
+        if cb.message:
+            await show_main(cb.message, state)
         await cb.answer()
 
 
@@ -292,7 +322,12 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
     if step == "print_material_custom":
         await state.update_data(waiting_text="material_custom")
         rows = [nav_row()]
-        await send_step_cb(cb, get_cfg("text_describe_material", "Напишите, какой материал нужен (одним сообщением):"), kb([rows[0]]), photo_ref_for("photo_print"))
+        await send_step_cb(
+            cb,
+            get_cfg("text_describe_material", "Напишите, какой материал нужен (одним сообщением):"),
+            kb([rows[0]]),
+            photo_ref_for("photo_print"),
+        )
         return
 
     if step == "scan_type":
@@ -321,7 +356,12 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
     if step == "describe_task":
         await state.update_data(waiting_text="description")
         rows = [nav_row()]
-        await send_step_cb(cb, get_cfg("text_describe_task", "Опишите задачу (одним сообщением):"), kb([rows[0]]), photo_ref_for("photo_idea"))
+        await send_step_cb(
+            cb,
+            get_cfg("text_describe_task", "Опишите задачу (одним сообщением):"),
+            kb([rows[0]]),
+            photo_ref_for("photo_idea"),
+        )
         return
 
     if step == "attach_file":
@@ -346,18 +386,31 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
             [InlineKeyboardButton(text=get_cfg("btn_about_map", "📍 На карте"), callback_data="about:map")],
             nav_row(False),
         ]
-        await send_step_cb(cb, get_cfg("about_text", "Chel3D — 3D-печать, 3D-сканирование и разработка моделей."), kb(rows), photo_ref_for("photo_about"))
+        await send_step_cb(
+            cb,
+            get_cfg("about_text", "Chel3D — 3D-печать, 3D-сканирование и разработка моделей."),
+            kb(rows),
+            photo_ref_for("photo_about"),
+        )
         return
 
     if step == "result":
-        summary = payload_summary(payload)
-        rows = [
-            [InlineKeyboardButton(text="✅ Отправить заявку", callback_data="submit")],
-            nav_row(),
-        ]
-        prefix = get_cfg("text_result_prefix", "Проверьте заявку:")
-        price_note = get_cfg("text_price_note", "Стоимость уточнит менеджер после просмотра.")
-        await send_step_cb(cb, f"{prefix}\n\n{summary}\n\n{price_note}", kb(rows), photo_ref_for("photo_main_menu"))
+        text = (
+            f"{get_cfg('text_result_prefix', 'Проверьте заявку:')}\n"
+            f"{payload_summary(payload)}\n\n"
+            f"{get_cfg('text_price_note', '💰 Уточнит менеджер после проверки.')}"
+        )
+        await send_step_cb(
+            cb,
+            text,
+            kb(
+                [
+                    [InlineKeyboardButton(text="✅ Отправить заявку", callback_data="submit")],
+                    [InlineKeyboardButton(text="🔁 Новый расчет", callback_data="nav:menu")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="nav:menu")],
+                ]
+            ),
+        )
         return
 
     # fallback
@@ -426,7 +479,6 @@ async def on_set(cb: CallbackQuery, state: FSMContext):
         return
 
     if key == "file":
-        # skip
         await render_step(cb, state, "result")
         return
 
@@ -491,7 +543,9 @@ async def on_text(message: Message, state: FSMContext):
     if not waiting:
         # keep dialog messages as "dialog" order
         try:
-            order_id = database.find_or_create_active_order(message.from_user.id, message.from_user.username, message.from_user.full_name)
+            order_id = database.find_or_create_active_order(
+                message.from_user.id, message.from_user.username, message.from_user.full_name
+            )
             database.add_order_message(order_id, "in", message.text or "", message.message_id)
         except Exception:
             logger.exception("Не удалось сохранить входящее сообщение")
@@ -503,7 +557,6 @@ async def on_text(message: Message, state: FSMContext):
         await state.update_data(payload=payload, waiting_text=None)
         await persist(state)
 
-        # proceed
         fake_cb = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="noop")
         await render_step(fake_cb, state, "attach_file")
         return
@@ -560,30 +613,29 @@ async def on_document(message: Message, state: FSMContext):
     await state.update_data(payload=payload, waiting_text=None)
     await persist(state)
 
-    # go to result
     fake_cb = CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data="noop")
     await render_step(fake_cb, state, "result")
 
 
 # -----------------------------
-# Internal API for backend -> bot
+# Internal API (backend -> bot)
 # -----------------------------
-def _auth_internal(request: web.Request) -> bool:
+async def internal_send_message(request: web.Request) -> web.Response:
     key = request.headers.get("X-Internal-Key", "")
-    return bool(key) and key == getattr(settings, "internal_api_key", "")
+    if key != getattr(settings, "internal_api_key", ""):
+        return web.json_response({"error": "forbidden"}, status=403)
 
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
 
-async def internal_send_message(request: web.Request):
-    if not _auth_internal(request):
-        return web.json_response({"error": "unauthorized"}, status=401)
-
-    body = await request.json()
-    user_id = int(body.get("user_id", 0))
-    text = str(body.get("text", "")).strip()
+    user_id = body.get("user_id")
+    text = (body.get("text") or "").strip()
     order_id = body.get("order_id")
 
     if not user_id or not text:
-        return web.json_response({"error": "bad request"}, status=400)
+        return web.json_response({"error": "user_id and text are required"}, status=400)
 
     bot: Bot = request.app["bot"]
     try:
