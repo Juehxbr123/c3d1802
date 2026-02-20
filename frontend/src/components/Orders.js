@@ -1,14 +1,31 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Card, Col, Form, Image, Input, message, Modal, Row, Select, Space, Statistic, Table, Tag } from 'antd';
-import { ShoppingCartOutlined, SyncOutlined, UserOutlined } from '@ant-design/icons';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Badge,
+  Button,
+  Card,
+  Form,
+  Input,
+  message,
+  Modal,
+  Select,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+} from 'antd';
+import { ShoppingCartOutlined, SyncOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import dayjs from 'dayjs';
 
 const { Option } = Select;
+const { Text } = Typography;
+const { TextArea } = Input;
 
 const statusOptions = [
   { value: 'draft', label: 'Черновик' },
   { value: 'new', label: 'Новая заявка' },
+  { value: 'submitted', label: 'Новая заявка' },
   { value: 'in_work', label: 'В работе' },
   { value: 'done', label: 'Готово' },
   { value: 'canceled', label: 'Отменено' },
@@ -17,12 +34,13 @@ const statusOptions = [
 const statusColor = {
   draft: 'default',
   new: 'blue',
+  submitted: 'blue',
   in_work: 'orange',
   done: 'green',
   canceled: 'red',
 };
 
-const Orders = () => {
+export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({ total_orders: 0, new_orders: 0, active_orders: 0 });
   const [loading, setLoading] = useState(false);
@@ -32,12 +50,13 @@ const Orders = () => {
   const [files, setFiles] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
   const [sending, setSending] = useState(false);
+  const [msgForm] = Form.useForm();
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
       const { data } = await axios.get('/api/orders/', { params: { status_filter: statusFilter } });
-      setOrders(data);
+      setOrders(Array.isArray(data) ? data : []);
     } catch {
       message.error('Не удалось загрузить заявки');
     } finally {
@@ -48,128 +67,238 @@ const Orders = () => {
   const fetchStats = useCallback(async () => {
     try {
       const { data } = await axios.get('/api/orders/stats');
-      setStats(data);
+      setStats(data || { total_orders: 0, new_orders: 0, active_orders: 0 });
     } catch {
       setStats({ total_orders: 0, new_orders: 0, active_orders: 0 });
-      message.warning('Статистика временно недоступна');
     }
   }, []);
 
-  useEffect(() => {
-    fetchOrders();
-    fetchStats();
+  const reloadAll = useCallback(async () => {
+    await Promise.all([fetchOrders(), fetchStats()]);
   }, [fetchOrders, fetchStats]);
 
-  const openOrder = async (order) => {
-    setSelectedOrder(order);
-    setModalVisible(true);
-    try {
-      const [filesResp, msgResp] = await Promise.all([
-        axios.get(`/api/orders/${order.id}/files`),
-        axios.get(`/api/orders/${order.id}/messages`),
-      ]);
-      setFiles(filesResp.data.files || []);
-      setChatMessages(msgResp.data.messages || []);
-    } catch {
-      setFiles([]);
-      setChatMessages([]);
-      message.warning('Не удалось загрузить файлы или чат по заявке');
-    }
-  };
+  useEffect(() => {
+    reloadAll();
+  }, [reloadAll]);
 
-  const sendManagerMessage = async (values) => {
+  const refreshChat = useCallback(async () => {
     if (!selectedOrder) return;
-    setSending(true);
     try {
-      await axios.post(`/api/orders/${selectedOrder.id}/messages`, { text: values.text });
-      message.success('Сообщение отправлено в Telegram');
       const { data } = await axios.get(`/api/orders/${selectedOrder.id}/messages`);
-      setChatMessages(data.messages || []);
-    } catch (err) {
-      message.error(err?.response?.data?.detail || 'Не удалось отправить сообщение в Telegram');
-    } finally {
-      setSending(false);
+      setChatMessages(data?.messages || []);
+    } catch {
+      // ignore
     }
-  };
+  }, [selectedOrder]);
 
-  const updateStatus = async (id, status) => {
-    try {
-      await axios.put(`/api/orders/${id}`, { status });
-      fetchOrders();
-    } catch (err) {
-      message.error(err?.response?.data?.detail || 'Не удалось обновить статус');
-    }
-  };
-
-  const columns = [
-    { title: 'ID', dataIndex: 'id', width: 80 },
-    { title: 'Клиент', render: (_, r) => `${r.full_name || 'Без имени'} (@${r.username || '-'})` },
-    { title: 'Тип заявки', dataIndex: 'branch' },
-    { title: 'Кратко', dataIndex: 'summary' },
-    {
-      title: 'Статус',
-      render: (_, r) => (
-        <Select value={r.status} style={{ width: 150 }} onChange={(v) => updateStatus(r.id, v)}>
-          {statusOptions.map((s) => <Option key={s.value} value={s.value}>{s.label}</Option>)}
-        </Select>
-      )
+  const openOrder = useCallback(
+    async (order) => {
+      setSelectedOrder(order);
+      setModalVisible(true);
+      msgForm.resetFields();
+      try {
+        const [filesResp, msgResp] = await Promise.all([
+          axios.get(`/api/orders/${order.id}/files`),
+          axios.get(`/api/orders/${order.id}/messages`),
+        ]);
+        setFiles(filesResp.data?.files || []);
+        setChatMessages(msgResp.data?.messages || []);
+      } catch {
+        setFiles([]);
+        setChatMessages([]);
+        message.warning('Не удалось загрузить файлы или чат по заявке');
+      }
     },
-    { title: 'Дата', dataIndex: 'created_at', render: (v) => dayjs(v).format('DD.MM.YYYY HH:mm') },
-    { title: 'Открыть', render: (_, r) => <Button onClick={() => openOrder(r)}>Карточка</Button> },
-  ];
+    [msgForm]
+  );
+
+  const updateStatus = useCallback(
+    async (id, status) => {
+      try {
+        await axios.put(`/api/orders/${id}`, { status });
+        message.success('Статус обновлён');
+        fetchOrders();
+        fetchStats();
+      } catch (err) {
+        message.error(err?.response?.data?.detail || 'Не удалось обновить статус');
+      }
+    },
+    [fetchOrders, fetchStats]
+  );
+
+  const sendManagerMessage = useCallback(
+    async (values) => {
+      if (!selectedOrder) return;
+      const text = (values.text || '').trim();
+      if (!text) return;
+
+      setSending(true);
+      try {
+        await axios.post(`/api/orders/${selectedOrder.id}/messages`, { text });
+        message.success('Сообщение отправлено в Telegram');
+        msgForm.resetFields();
+        await refreshChat();
+      } catch (err) {
+        message.error(err?.response?.data?.detail || 'Не удалось отправить сообщение в Telegram');
+      } finally {
+        setSending(false);
+      }
+    },
+    [msgForm, refreshChat, selectedOrder]
+  );
+
+  const columns = useMemo(
+    () => [
+      { title: 'ID', dataIndex: 'id', width: 80 },
+      {
+        title: 'Клиент',
+        render: (_, r) => (
+          <div>
+            <div>{r.full_name || 'Без имени'}</div>
+            <Text type="secondary">@{r.username || '-'}</Text>
+          </div>
+        ),
+      },
+      { title: 'Тип заявки', dataIndex: 'branch', width: 140 },
+      { title: 'Кратко', dataIndex: 'summary' },
+      {
+        title: 'Статус',
+        width: 180,
+        render: (_, r) => (
+          <Select value={r.status} style={{ width: 170 }} onChange={(v) => updateStatus(r.id, v)}>
+            {statusOptions.map((s) => (
+              <Option key={s.value} value={s.value}>
+                {s.label}
+              </Option>
+            ))}
+          </Select>
+        ),
+      },
+      {
+        title: 'Дата',
+        dataIndex: 'created_at',
+        width: 170,
+        render: (v) => (v ? dayjs(v).format('DD.MM.YYYY HH:mm') : '-'),
+      },
+      { title: 'Открыть', width: 110, render: (_, r) => <Button onClick={() => openOrder(r)}>Карточка</Button> },
+    ],
+    [openOrder, updateStatus]
+  );
 
   return (
     <div>
-      <h1>Заявки Chel3D</h1>
-      <Row gutter={12} style={{ marginBottom: 16 }}>
-        <Col span={8}><Card><Statistic title='Всего заявок' value={stats.total_orders} prefix={<ShoppingCartOutlined />} /></Card></Col>
-        <Col span={8}><Card><Statistic title='Новые' value={stats.new_orders} prefix={<Badge dot status='processing' />} /></Card></Col>
-        <Col span={8}><Card><Statistic title='Активные' value={stats.active_orders} prefix={<SyncOutlined spin />} /></Card></Col>
-      </Row>
-      <Space style={{ marginBottom: 12 }}>
-        <span>Фильтр:</span>
-        <Select allowClear placeholder='Все статусы' style={{ width: 220 }} onChange={setStatusFilter}>
-          {statusOptions.map((s) => <Option key={s.value} value={s.value}>{s.label}</Option>)}
-        </Select>
-      </Space>
-      <Table rowKey='id' loading={loading} columns={columns} dataSource={orders} />
-
-      <Modal title={`Заявка №${selectedOrder?.id}`} open={modalVisible} onCancel={() => setModalVisible(false)} footer={null} width={1000}>
-        {selectedOrder && (
-          <Row gutter={16}>
-            <Col span={12}>
-              <h3>Клиент</h3>
-              <p><UserOutlined /> {selectedOrder.full_name || 'Без имени'}</p>
-              <p>Пользователь: @{selectedOrder.username || '-'}</p>
-              <p>Telegram ID: {selectedOrder.user_id}</p>
-              <p>Тип: {selectedOrder.branch}</p>
-              <Tag color={statusColor[selectedOrder.status]}>{statusOptions.find((s) => s.value === selectedOrder.status)?.label}</Tag>
-              <h3 style={{ marginTop: 16 }}>Параметры</h3>
-              <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify((() => { try { return JSON.parse(selectedOrder.order_payload || '{}'); } catch { return selectedOrder.order_payload || {}; } })(), null, 2)}</pre>
-            </Col>
-            <Col span={12}>
-              <h3>Файлы клиента</h3>
-              {(files || []).filter((f) => f.file_url).map((f) => (
-                <Image key={f.id} src={f.file_url} alt={f.original_name} style={{ marginBottom: 8 }} />
+      <Card
+        title={
+          <Space>
+            <ShoppingCartOutlined />
+            Заявки
+          </Space>
+        }
+        extra={
+          <Space>
+            <Select
+              allowClear
+              placeholder="Фильтр по статусу"
+              style={{ width: 220 }}
+              value={statusFilter}
+              onChange={setStatusFilter}
+            >
+              {statusOptions.map((s) => (
+                <Option key={s.value} value={s.value}>
+                  {s.label}
+                </Option>
               ))}
-              <h3 style={{ marginTop: 16 }}>Чат с клиентом</h3>
-              <div style={{ maxHeight: 250, overflow: 'auto', border: '1px solid #eee', padding: 8, marginBottom: 8 }}>
-                {chatMessages.map((m) => (
-                  <p key={m.id}><b>{m.direction === 'out' ? 'Менеджер' : 'Клиент'}:</b> {m.message_text}</p>
-                ))}
+            </Select>
+            <Button icon={<SyncOutlined />} onClick={reloadAll} loading={loading}>
+              Обновить
+            </Button>
+          </Space>
+        }
+      >
+        <Space style={{ marginBottom: 12 }}>
+          <Statistic title="Всего" value={stats.total_orders} />
+          <Statistic title="Новых" value={stats.new_orders} />
+          <Statistic title="Активных" value={stats.active_orders} />
+        </Space>
+
+        <Table rowKey="id" loading={loading} columns={columns} dataSource={orders} pagination={{ pageSize: 20 }} />
+      </Card>
+
+      <Modal
+        open={modalVisible}
+        onCancel={() => setModalVisible(false)}
+        footer={null}
+        width={900}
+        title={selectedOrder ? `Заявка #${selectedOrder.id}` : 'Заявка'}
+      >
+        {selectedOrder ? (
+          <>
+            <Space style={{ marginBottom: 12 }}>
+              <Tag color={statusColor[selectedOrder.status] || 'default'}>
+                {statusOptions.find((s) => s.value === selectedOrder.status)?.label || selectedOrder.status}
+              </Tag>
+              <Text type="secondary">{selectedOrder.branch}</Text>
+              <Text type="secondary">
+                {selectedOrder.created_at ? dayjs(selectedOrder.created_at).format('DD.MM.YYYY HH:mm') : ''}
+              </Text>
+            </Space>
+
+            <Card size="small" title="Сообщения" style={{ marginBottom: 12 }}>
+              <div style={{ maxHeight: 240, overflow: 'auto' }}>
+                {chatMessages.length ? (
+                  chatMessages.map((m) => (
+                    <div key={m.id || `${m.created_at}-${m.direction}`} style={{ marginBottom: 8 }}>
+                      <Badge status={m.direction === 'out' ? 'processing' : 'default'} />
+                      <Text strong style={{ marginLeft: 6 }}>
+                        {m.direction === 'out' ? 'Менеджер' : 'Клиент'}:
+                      </Text>
+                      <div style={{ marginLeft: 18 }}>{m.message_text}</div>
+                      {m.created_at ? (
+                        <Text type="secondary" style={{ marginLeft: 18, fontSize: 12 }}>
+                          {dayjs(m.created_at).format('DD.MM.YYYY HH:mm')}
+                        </Text>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <Text type="secondary">Пока нет сообщений</Text>
+                )}
               </div>
-              <Form onFinish={sendManagerMessage}>
-                <Form.Item name='text' rules={[{ required: true, message: 'Введите сообщение' }]}>
-                  <Input.TextArea rows={3} placeholder='Введите сообщение клиенту' />
+
+              <Form form={msgForm} layout="vertical" onFinish={sendManagerMessage} style={{ marginTop: 12 }}>
+                <Form.Item name="text" label="Ответить клиенту" rules={[{ required: true, message: 'Введите текст' }]}>
+                  <TextArea rows={3} />
                 </Form.Item>
-                <Button type='primary' htmlType='submit' loading={sending}>Отправить в Telegram</Button>
+                <Button type="primary" htmlType="submit" loading={sending}>
+                  Отправить
+                </Button>
+                <Button style={{ marginLeft: 8 }} onClick={refreshChat} disabled={!selectedOrder}>
+                  Обновить чат
+                </Button>
               </Form>
-            </Col>
-          </Row>
-        )}
+            </Card>
+
+            <Card size="small" title="Файлы">
+              {files.length ? (
+                files.map((f) => (
+                  <div key={f.id || f.telegram_file_id} style={{ marginBottom: 8 }}>
+                    <Tag>{f.original_name || 'Файл'}</Tag>
+                    {f.file_url ? (
+                      <a href={f.file_url} target="_blank" rel="noreferrer">
+                        открыть
+                      </a>
+                    ) : (
+                      <Text type="secondary"> (ссылка недоступна)</Text>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <Text type="secondary">Файлов нет</Text>
+              )}
+            </Card>
+          </>
+        ) : null}
       </Modal>
     </div>
   );
-};
-
-export default Orders;
+}
