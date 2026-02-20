@@ -1,12 +1,123 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Card, Form, Input, Button, Switch, message, Tabs, Space,
-  Divider, InputNumber, Alert
-} from 'antd';
-import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
+import React, { useEffect, useState } from 'react';
+import { Alert, Button, Card, Col, Divider, Form, Input, Row, Switch, Tabs, message } from 'antd';
+import { ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import axios from 'axios';
 
 const { TextArea } = Input;
+
+const textFields = {
+  general: [
+    ['welcome_menu_msg', 'Текст главного меню'],
+    ['text_result_prefix', 'Префикс итога заявки'],
+    ['text_price_note', 'Строка про стоимость'],
+    ['text_submit_ok', 'Сообщение после успешной отправки'],
+    ['text_submit_fail', 'Сообщение при ошибке отправки'],
+  ],
+  menu: [
+    ['btn_menu_print', 'Кнопка главного меню: печать'],
+    ['btn_menu_scan', 'Кнопка главного меню: сканирование'],
+    ['btn_menu_idea', 'Кнопка главного меню: идея'],
+    ['btn_menu_about', 'Кнопка главного меню: о нас'],
+    ['btn_menu_goods', 'Кнопка главного меню: готовые товары'],
+  ],
+  print: [
+    ['text_print_tech', 'Описание шага выбора технологии'],
+    ['btn_print_fdm', 'Кнопка технологии: FDM'],
+    ['btn_print_resin', 'Кнопка технологии: фотополимер'],
+    ['btn_print_unknown', 'Кнопка технологии: не знаю'],
+    ['text_select_material', 'Описание шага выбора материала'],
+    ['btn_mat_petg', 'Кнопка материала: PET-G'],
+    ['btn_mat_pla', 'Кнопка материала: PLA'],
+    ['btn_mat_petg_carbon', 'Кнопка материала: PET-G Carbon'],
+    ['btn_mat_tpu', 'Кнопка материала: TPU'],
+    ['btn_mat_nylon', 'Кнопка материала: Нейлон'],
+    ['btn_mat_other', 'Кнопка материала: другой'],
+    ['btn_resin_standard', 'Кнопка смолы: стандартная'],
+    ['btn_resin_abs', 'Кнопка смолы: ABS-Like'],
+    ['btn_resin_tpu', 'Кнопка смолы: TPU-Like'],
+    ['btn_resin_nylon', 'Кнопка смолы: Нейлон-Like'],
+    ['btn_resin_other', 'Кнопка смолы: другая'],
+    ['text_describe_material', 'Описание шага «свой материал»'],
+    ['text_attach_file', 'Описание шага вложения'],
+  ],
+  scan: [
+    ['text_scan_type', 'Описание шага сканирования'],
+    ['btn_scan_human', 'Кнопка скан: человек'],
+    ['btn_scan_object', 'Кнопка скан: предмет'],
+    ['btn_scan_industrial', 'Кнопка скан: промышленный объект'],
+    ['btn_scan_other', 'Кнопка скан: другое'],
+  ],
+  idea: [
+    ['text_idea_type', 'Описание шага идеи'],
+    ['btn_idea_photo', 'Кнопка идея: по фото/эскизу'],
+    ['btn_idea_award', 'Кнопка идея: сувенир/кубок/медаль'],
+    ['btn_idea_master', 'Кнопка идея: мастер-модель'],
+    ['btn_idea_sign', 'Кнопка идея: вывески'],
+    ['btn_idea_other', 'Кнопка идея: другое'],
+    ['text_describe_task', 'Описание шага свободного ввода'],
+  ],
+  goods: [
+    ['text_goods_type', 'Описание шага готовых товаров'],
+    ['btn_goods_sport', 'Кнопка товары: спорт'],
+    ['btn_goods_decor', 'Кнопка товары: интерьер и декор'],
+    ['btn_goods_accessories', 'Кнопка товары: аксессуары'],
+    ['btn_goods_gaming', 'Кнопка товары: для геймеров'],
+    ['btn_goods_other', 'Кнопка товары: другое'],
+  ],
+  about: [
+    ['about_text', 'Описание раздела «О нас»'],
+    ['btn_about_equipment', 'Кнопка «Оборудование»'],
+    ['btn_about_projects', 'Кнопка «Наши проекты»'],
+    ['btn_about_contacts', 'Кнопка «Контакты»'],
+    ['btn_about_map', 'Кнопка «На карте»'],
+    ['about_equipment_text', 'Текст «Оборудование»'],
+    ['about_projects_text', 'Текст «Наши проекты»'],
+    ['about_contacts_text', 'Текст «Контакты»'],
+    ['about_map_text', 'Текст «На карте»'],
+  ],
+};
+
+const toggleFields = [
+  ['enabled_menu_print', 'Показывать кнопку меню: печать'],
+  ['enabled_menu_scan', 'Показывать кнопку меню: сканирование'],
+  ['enabled_menu_idea', 'Показывать кнопку меню: идея'],
+  ['enabled_menu_about', 'Показывать кнопку меню: о нас'],
+  ['enabled_menu_goods', 'Показывать кнопку меню: готовые товары'],
+  ['enabled_print_fdm', 'Показывать кнопку FDM'],
+  ['enabled_print_resin', 'Показывать кнопку фотополимер'],
+  ['enabled_print_unknown', 'Показывать кнопку не знаю'],
+  ['enabled_scan_human', 'Показывать кнопку скан: человек'],
+  ['enabled_scan_object', 'Показывать кнопку скан: предмет'],
+  ['enabled_scan_industrial', 'Показывать кнопку скан: промышленный объект'],
+  ['enabled_scan_other', 'Показывать кнопку скан: другое'],
+  ['enabled_idea_photo', 'Показывать кнопку идея: по фото/эскизу'],
+  ['enabled_idea_award', 'Показывать кнопку идея: сувенир/награда'],
+  ['enabled_idea_master', 'Показывать кнопку идея: мастер-модель'],
+  ['enabled_idea_sign', 'Показывать кнопку идея: вывески'],
+  ['enabled_idea_other', 'Показывать кнопку идея: другое'],
+  ['enabled_goods_sport', 'Показывать кнопку товары: спорт'],
+  ['enabled_goods_decor', 'Показывать кнопку товары: интерьер и декор'],
+  ['enabled_goods_accessories', 'Показывать кнопку товары: аксессуары'],
+  ['enabled_goods_gaming', 'Показывать кнопку товары: для геймеров'],
+  ['enabled_goods_other', 'Показывать кнопку товары: другое'],
+  ['enabled_about_equipment', 'Показывать кнопку о нас: оборудование'],
+  ['enabled_about_projects', 'Показывать кнопку о нас: проекты'],
+  ['enabled_about_contacts', 'Показывать кнопку о нас: контакты'],
+  ['enabled_about_map', 'Показывать кнопку о нас: карта'],
+];
+
+const photoFields = [
+  ['photo_main_menu', 'Фото главного меню'],
+  ['photo_print', 'Фото ветки печати'],
+  ['photo_scan', 'Фото ветки сканирования'],
+  ['photo_idea', 'Фото ветки идеи'],
+  ['photo_about', 'Фото раздела о нас'],
+  ['photo_about_equipment', 'Фото раздела оборудование'],
+  ['photo_about_projects', 'Фото раздела проекты'],
+  ['photo_about_contacts', 'Фото раздела контакты'],
+  ['photo_about_map', 'Фото раздела карта'],
+  ['photo_goods', 'Фото ветки готовых товаров'],
+];
 
 const BotConfig = () => {
   const [loading, setLoading] = useState(false);
@@ -14,37 +125,20 @@ const BotConfig = () => {
   const [settingsForm] = Form.useForm();
 
   const loadConfig = React.useCallback(async () => {
-    console.log('BotConfig: Loading config...');
     setLoading(true);
     try {
       const [textsResponse, settingsResponse] = await Promise.all([
         axios.get('/api/bot-config/texts'),
         axios.get('/api/bot-config/settings')
       ]);
-
-      console.log('BotConfig: Loaded texts:', textsResponse.data);
-      console.log('BotConfig: Loaded settings:', settingsResponse.data);
-
-      if (textsResponse.data) {
-        textsForm.setFieldsValue(textsResponse.data);
-      }
-
-      if (settingsResponse.data) {
-        // Конвертируем "1"/"0" в true/false для Switch
-        const normalizedSettings = { ...settingsResponse.data };
-        ['is_photo_required', 'step_extra_enabled'].forEach(key => {
-          if (normalizedSettings[key] !== undefined) {
-            normalizedSettings[key] = normalizedSettings[key] === '1' || normalizedSettings[key] === 1 || normalizedSettings[key] === true || normalizedSettings[key] === "true";
-          }
-        });
-        settingsForm.setFieldsValue(normalizedSettings);
-      }
-    } catch (error) {
-      console.error('BotConfig: Load error:', error);
+      textsForm.setFieldsValue(textsResponse.data || {});
+      settingsForm.setFieldsValue(settingsResponse.data || {});
+    } catch {
       message.error('Ошибка загрузки настроек');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [textsForm, settingsForm]);
+  }, [settingsForm, textsForm]);
 
   useEffect(() => {
     loadConfig();
@@ -54,9 +148,9 @@ const BotConfig = () => {
     setLoading(true);
     try {
       await axios.put('/api/bot-config/texts', values);
-      message.success('Тексты сохранены успешно');
-    } catch (error) {
-      message.error('Ошибка сохранения текстов');
+      message.success('Тексты сохранены');
+    } catch {
+      message.error('Не удалось сохранить тексты');
     } finally {
       setLoading(false);
     }
@@ -66,333 +160,85 @@ const BotConfig = () => {
     setLoading(true);
     try {
       await axios.put('/api/bot-config/settings', values);
-      message.success('Настройки сохранены успешно');
-    } catch (error) {
-      message.error('Ошибка сохранения настроек');
+      message.success('Настройки сохранены');
+    } catch {
+      message.error('Не удалось сохранить настройки');
     } finally {
       setLoading(false);
     }
   };
 
-  const tabItems = [
+  const renderTextSection = (title, fields) => (
+    <Card title={title} style={{ marginBottom: 12 }}>
+      {fields.map(([name, label]) => (
+        <Form.Item key={name} label={label} name={name}>
+          <TextArea rows={2} />
+        </Form.Item>
+      ))}
+    </Card>
+  );
+
+  const tabs = [
     {
       key: 'texts',
-      label: '📝 Тексты бота',
+      label: '🧩 Конструктор веток и кнопок',
       children: (
-        <Card title="Конструктор текстов">
-          <Form
-            form={textsForm}
-            layout="vertical"
-            onFinish={saveTexts}
-          >
-            <Form.Item
-              label="Приветственное сообщение"
-              name="welcome_msg"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={3}
-                placeholder="Привет! Я принимаю заказы на токарные работы..."
-              />
-            </Form.Item>
-
-            <Divider>Шаг 1: Фото</Divider>
-
-            <Form.Item
-              label="Текст вопроса про фото"
-              name="step_photo_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="📷 Шаг 1. Загрузите фото детали..."
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Кнопка 'Пропустить фото'"
-              name="btn_skip_photo"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <Input placeholder="Нет фото / Пропустить" />
-            </Form.Item>
-
-            <Divider>Шаг 2: Тип работы</Divider>
-
-            <Form.Item
-              label="Текст вопроса про тип работы"
-              name="step_type_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="🛠 Шаг 2. Что нужно сделать?"
-              />
-            </Form.Item>
-
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Form.Item
-                label="Кнопка 'Восстановление детали'"
-                name="btn_type_repair"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🛠 Восстановление детали" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Копия по образцу'"
-                name="btn_type_copy"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="⚙️ Копия по образцу" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Деталь по чертежу'"
-                name="btn_type_drawing"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="📐 Деталь по чертежу" />
-              </Form.Item>
-            </Space>
-
-            <Divider>Шаг 3: Размеры</Divider>
-
-            <Form.Item
-              label="Текст вопроса про размеры"
-              name="step_dim_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={3}
-                placeholder="📏 Шаг 3. Размеры..."
-              />
-            </Form.Item>
-
-            <Divider>Шаг 4: Условия работы</Divider>
-
-            <Form.Item
-              label="Текст вопроса про условия"
-              name="step_cond_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="⚙️ Шаг 4. Специфика детали..."
-              />
-            </Form.Item>
-
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Form.Item
-                label="Кнопка 'Вращение'"
-                name="btn_cond_rotation"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="💫 Вращение" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Неподвижно'"
-                name="btn_cond_static"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🧱 Неподвижно" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Ударная нагрузка'"
-                name="btn_cond_impact"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🔨 Ударная нагрузка" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Не знаю'"
-                name="btn_cond_unknown"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🤷‍♂️ Не знаю" />
-              </Form.Item>
-            </Space>
-
-            <Divider>Шаг 5: Срочность</Divider>
-
-            <Form.Item
-              label="Текст вопроса про срочность"
-              name="step_urgency_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="⏳ Шаг 5. Срочность"
-              />
-            </Form.Item>
-
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Form.Item
-                label="Кнопка 'СРОЧНО'"
-                name="btn_urgency_high"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🔥 СРОЧНО (Цена x2)" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Стандарт'"
-                name="btn_urgency_med"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🗓 Стандарт (2-3 дня)" />
-              </Form.Item>
-
-              <Form.Item
-                label="Кнопка 'Не к спеху'"
-                name="btn_urgency_low"
-                rules={[{ required: true, message: 'Обязательное поле' }]}
-              >
-                <Input placeholder="🐢 Не к спеху" />
-              </Form.Item>
-            </Space>
-
-            <Divider>Финальные сообщения</Divider>
-
-            <Form.Item
-              label="Текст финального вопроса"
-              name="step_final_text"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="✍️ Финал. Напишите комментарий..."
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Сообщение об успехе"
-              name="msg_done"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="✅ Заказ принят!..."
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Ошибка: нет фото"
-              name="err_photo_required"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <TextArea
-                rows={2}
-                placeholder="⚠️ Я не могу принять заказ без фото..."
-              />
-            </Form.Item>
-
-            <Form.Item
-              label="Сообщение об отмене"
-              name="msg_order_canceled"
-              rules={[{ required: true, message: 'Обязательное поле' }]}
-            >
-              <Input placeholder="Заказ отменен" />
-            </Form.Item>
-
-            <Form.Item style={{ textAlign: 'right' }}>
-              <Space>
-                <Button icon={<ReloadOutlined />} onClick={loadConfig}>
-                  Сбросить
-                </Button>
-                <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={loading}>
-                  Сохранить тексты
-                </Button>
-              </Space>
-            </Form.Item>
-          </Form>
-        </Card>
+        <Form form={textsForm} layout='vertical' onFinish={saveTexts}>
+          {renderTextSection('Общие тексты', textFields.general)}
+          {renderTextSection('Главное меню', textFields.menu)}
+          {renderTextSection('Ветка: Рассчитать печать', textFields.print)}
+          {renderTextSection('Ветка: 3D-сканирование', textFields.scan)}
+          {renderTextSection('Ветка: Нет модели / Хочу придумать', textFields.idea)}
+          {renderTextSection('Ветка: Наши готовые товары', textFields.goods)}
+          {renderTextSection('Ветка: О нас', textFields.about)}
+          <Button type='primary' icon={<SaveOutlined />} htmlType='submit' loading={loading}>Сохранить тексты</Button>
+        </Form>
       )
     },
     {
       key: 'settings',
-      label: '🔧 Системные настройки',
-      forceRender: true,
+      label: '⚙️ Включение кнопок, фото и системные',
       children: (
-        <Card title="Настройки поведения бота">
-          <Form
-            form={settingsForm}
-            layout="vertical"
-            onFinish={saveSettings}
-          >
-            <Form.Item
-              label="Фото обязательно"
-              name="is_photo_required"
-              valuePropName="checked"
-              tooltip="Если включено, клиент не сможет пропустить шаг с фото"
-            >
-              <Switch checkedChildren="Да" unCheckedChildren="Нет" />
+        <Card title='Системные настройки и фото'>
+          <Alert
+            type='info'
+            showIcon
+            style={{ marginBottom: 16 }}
+            message='Можно писать любой язык в текстах. Для фото: путь, URL или Telegram file_id.'
+          />
+          <Form form={settingsForm} layout='vertical' onFinish={saveSettings}>
+            <Form.Item label='ID чата/группы для заявок (orders_chat_id)' name='orders_chat_id'>
+              <Input />
             </Form.Item>
-
-            <Form.Item
-              label="Дополнительный вопрос включен"
-              name="step_extra_enabled"
-              valuePropName="checked"
-              tooltip="Добавляет еще один шаг опроса после срочности"
-            >
-              <Switch checkedChildren="Да" unCheckedChildren="Нет" />
+            <Form.Item label='Юзернейм менеджера (manager_username)' name='manager_username'>
+              <Input />
             </Form.Item>
-
-            <Divider />
-
-            <Form.Item
-              label="ID чата администратора"
-              name="admin_chat_id"
-              tooltip="Telegram ID администратора для получения уведомлений"
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                placeholder="123456789"
-              />
+            <Form.Item label='Плейсхолдер по умолчанию (placeholder_photo_path)' name='placeholder_photo_path'>
+              <Input />
             </Form.Item>
-
-            <Alert
-              message="Важно"
-              description="ID чата администратора можно получить командой /iamadmin в боте после настройки BOT_ADMIN_PASSWORD"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-
-            <Form.Item style={{ textAlign: 'right' }}>
-              <Space>
-                <Button icon={<ReloadOutlined />} onClick={loadConfig}>
-                  Сбросить
-                </Button>
-                <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={loading}>
-                  Сохранить настройки
-                </Button>
-              </Space>
-            </Form.Item>
+            <Divider>Фото</Divider>
+            {photoFields.map(([name, label]) => (
+              <Form.Item key={name} label={label} name={name}><Input /></Form.Item>
+            ))}
+            <Divider>Включать / выключать кнопки</Divider>
+            <Row gutter={16}>
+              {toggleFields.map(([name, label]) => (
+                <Col span={12} key={name}>
+                  <Form.Item label={label} name={name} valuePropName='checked'>
+                    <Switch />
+                  </Form.Item>
+                </Col>
+              ))}
+            </Row>
+            <Button type='primary' icon={<SaveOutlined />} htmlType='submit' loading={loading}>Сохранить настройки</Button>
+            <Button style={{ marginLeft: 8 }} icon={<ReloadOutlined />} onClick={loadConfig}>Обновить</Button>
           </Form>
         </Card>
       )
     }
   ];
 
-  return (
-    <div className="bot-config-content">
-      <h1>⚙️ Настройки бота</h1>
-
-      <Alert
-        message="Внимание"
-        description="Изменения вступят в силу после перезапуска бота. Используйте docker compose restart bot"
-        type="warning"
-        showIcon
-        style={{ marginBottom: 24 }}
-      />
-
-      <Tabs defaultActiveKey="texts" items={tabItems} />
-    </div>
-  );
+  return <Tabs items={tabs} />;
 };
 
 export default BotConfig;
