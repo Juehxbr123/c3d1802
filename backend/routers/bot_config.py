@@ -1,99 +1,172 @@
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Any
+
+from fastapi import APIRouter, Depends
+
 import database
 from routers.auth import verify_token
 
 router = APIRouter()
 
-class BotConfigUpdate(BaseModel):
-    key: str
-    value: str
+TEXT_KEYS = [
+    # Общие
+    "welcome_menu_msg",
+    "text_submit_ok",
+    "text_submit_fail",
+    "text_result_prefix",
+    "text_price_note",
+    # Главное меню
+    "btn_menu_print",
+    "btn_menu_scan",
+    "btn_menu_idea",
+    "btn_menu_about",
+    "btn_menu_goods",
+    # Печать
+    "text_print_tech",
+    "btn_print_fdm",
+    "btn_print_resin",
+    "btn_print_unknown",
+    "text_select_material",
+    "btn_mat_petg",
+    "btn_mat_pla",
+    "btn_mat_petg_carbon",
+    "btn_mat_tpu",
+    "btn_mat_nylon",
+    "btn_mat_other",
+    "btn_resin_standard",
+    "btn_resin_abs",
+    "btn_resin_tpu",
+    "btn_resin_nylon",
+    "btn_resin_other",
+    "text_describe_material",
+    "text_attach_file",
+    # Скан
+    "text_scan_type",
+    "btn_scan_human",
+    "btn_scan_object",
+    "btn_scan_industrial",
+    "btn_scan_other",
+    # Идея
+    "text_idea_type",
+    "btn_idea_photo",
+    "btn_idea_award",
+    "btn_idea_master",
+    "btn_idea_sign",
+    "btn_idea_other",
+    "text_describe_task",
+    # Готовые товары
+    "text_goods_type",
+    "btn_goods_sport",
+    "btn_goods_decor",
+    "btn_goods_accessories",
+    "btn_goods_gaming",
+    "btn_goods_other",
+    # О нас
+    "about_text",
+    "btn_about_equipment",
+    "btn_about_projects",
+    "btn_about_contacts",
+    "btn_about_map",
+    "about_equipment_text",
+    "about_projects_text",
+    "about_contacts_text",
+    "about_map_text",
+]
+
+PHOTO_KEYS = [
+    "photo_main_menu",
+    "photo_print",
+    "photo_scan",
+    "photo_idea",
+    "photo_about",
+    "photo_about_equipment",
+    "photo_about_projects",
+    "photo_about_contacts",
+    "photo_about_map",
+    "photo_goods",
+]
+
+TOGGLE_KEYS = [
+    "enabled_menu_print",
+    "enabled_menu_scan",
+    "enabled_menu_idea",
+    "enabled_menu_about",
+    "enabled_menu_goods",
+    "enabled_print_fdm",
+    "enabled_print_resin",
+    "enabled_print_unknown",
+    "enabled_scan_human",
+    "enabled_scan_object",
+    "enabled_scan_industrial",
+    "enabled_scan_other",
+    "enabled_idea_photo",
+    "enabled_idea_award",
+    "enabled_idea_master",
+    "enabled_idea_sign",
+    "enabled_idea_other",
+    "enabled_goods_sport",
+    "enabled_goods_decor",
+    "enabled_goods_accessories",
+    "enabled_goods_gaming",
+    "enabled_goods_other",
+    "enabled_about_equipment",
+    "enabled_about_projects",
+    "enabled_about_contacts",
+    "enabled_about_map",
+]
+
+SETTINGS_KEYS = [
+    "orders_chat_id",
+    "manager_username",
+    "placeholder_photo_path",
+] + TOGGLE_KEYS
+
 
 @router.get("/")
-async def get_bot_config(payload: dict = Depends(verify_token)) -> Dict[str, Any]:
-    """Получить все настройки бота"""
-    try:
-        config = database.get_bot_config()
-        return config
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка получения настроек: {str(e)}")
+async def get_bot_config(payload: dict = Depends(verify_token)) -> dict[str, Any]:
+    return database.get_bot_config()
+
 
 @router.put("/")
-async def update_bot_config(
-    config_update: BotConfigUpdate,
-    payload: dict = Depends(verify_token)
-):
-    """Обновить настройку бота"""
-    try:
-        # Определяем, в какую таблицу сохранять
-        if config_update.key in ['admin_chat_id', 'bot_token']:
-            database.update_setting(config_update.key, config_update.value)
-        else:
-            database.update_bot_config(config_update.key, config_update.value)
+async def update_bot_config(data: dict[str, str], payload: dict = Depends(verify_token)):
+    for key, value in data.items():
+        database.set_bot_config(key, str(value))
+    return {"message": "Настройки сохранены"}
 
-        return {"message": "Настройка обновлена успешно"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка обновления настройки: {str(e)}")
 
 @router.get("/texts")
-async def get_bot_texts(payload: dict = Depends(verify_token)) -> Dict[str, str]:
-    """Получить тексты бота для конструктора"""
-    try:
-        config = database.get_bot_config()
-        # Фильтруем только текстовые настройки
-        text_keys = [
-            'welcome_msg', 'step_photo_text', 'btn_skip_photo', 'step_type_text',
-            'btn_type_repair', 'btn_type_copy', 'btn_type_drawing', 'step_dim_text',
-            'step_cond_text', 'btn_cond_rotation', 'btn_cond_static', 'btn_cond_impact',
-            'btn_cond_unknown', 'step_urgency_text', 'btn_urgency_high', 'btn_urgency_med',
-            'btn_urgency_low', 'step_final_text', 'msg_done', 'err_photo_required',
-            'msg_order_canceled'
-        ]
-        texts = {key: config.get(key, '') for key in text_keys}
-        return texts
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка получения текстов: {str(e)}")
+async def get_bot_texts(payload: dict = Depends(verify_token)):
+    config = database.get_bot_config()
+    return {key: config.get(key, "") for key in TEXT_KEYS}
+
 
 @router.put("/texts")
-async def update_bot_texts(
-    texts: Dict[str, str],
-    payload: dict = Depends(verify_token)
-):
-    """Обновить тексты бота"""
-    try:
-        for key, value in texts.items():
-            database.update_bot_config(key, value)
-        return {"message": "Тексты обновлены успешно"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка обновления текстов: {str(e)}")
+async def update_bot_texts(data: dict[str, Any], payload: dict = Depends(verify_token)):
+    for key in TEXT_KEYS:
+        if key in data:
+            database.set_bot_config(key, str(data[key]))
+    return {"message": "Тексты сохранены"}
+
 
 @router.get("/settings")
-async def get_bot_settings(payload: dict = Depends(verify_token)) -> Dict[str, Any]:
-    """Получить системные настройки бота"""
-    try:
-        config = database.get_bot_config()
-        # Фильтруем только настройки (не тексты)
-        settings_keys = [
-            'is_photo_required', 'step_extra_enabled', 'admin_chat_id'
-        ]
-        settings = {key: config.get(key, '') for key in settings_keys}
-        return settings
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка получения настроек: {str(e)}")
+async def get_bot_settings(payload: dict = Depends(verify_token)):
+    config = database.get_bot_config()
+    keys = SETTINGS_KEYS + PHOTO_KEYS
+    result = {key: config.get(key, "") for key in keys}
+    for key in TOGGLE_KEYS:
+        if result.get(key, "") == "":
+            result[key] = True
+        else:
+            result[key] = str(result[key]).lower() in {"1", "true", "yes", "on"}
+    return result
+
 
 @router.put("/settings")
-async def update_bot_settings(
-    settings: Dict[str, Any],
-    payload: dict = Depends(verify_token)
-):
-    """Обновить системные настройки бота"""
-    try:
-        for key, value in settings.items():
-            if key == 'admin_chat_id':
-                database.update_setting(key, str(value))
-            else:
-                database.update_bot_config(key, str(value))
-        return {"message": "Настройки обновлены успешно"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка обновления настроек: {str(e)}")
+async def update_bot_settings(data: dict[str, Any], payload: dict = Depends(verify_token)):
+    keys = SETTINGS_KEYS + PHOTO_KEYS
+    for key in keys:
+        if key in data:
+            value = data[key]
+            if key in TOGGLE_KEYS:
+                value = "1" if bool(value) else "0"
+            database.set_bot_config(key, str(value))
+    return {"message": "Системные настройки сохранены"}
