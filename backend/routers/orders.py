@@ -31,6 +31,12 @@ class MessageCreate(BaseModel):
 
 @router.get("/")
 async def get_orders(page: int = 1, limit: int = 20, status_filter: str | None = None, payload: dict = Depends(verify_token)):
+async def get_orders(
+    page: int = 1,
+    limit: int = 20,
+    status_filter: str | None = None,
+    payload: dict = Depends(verify_token),
+):
     try:
         offset = (page - 1) * limit
         orders = database.get_orders_paginated(limit, offset, status_filter)
@@ -42,11 +48,18 @@ async def get_orders(page: int = 1, limit: int = 20, status_filter: str | None =
         raise HTTPException(status_code=500, detail="Ошибка получения списка заявок") from exc
 
 
+
+
 @router.get("/stats")
 async def get_order_stats(payload: dict = Depends(verify_token)):
     try:
         return database.get_order_statistics()
     except Exception as exc:
+        logger.exception("Ошибка получения статистики")
+        return {"total_orders": 0, "new_orders": 0, "active_orders": 0}
+
+
+    except Exception:
         logger.exception("Ошибка получения статистики")
         return {"total_orders": 0, "new_orders": 0, "active_orders": 0}
 
@@ -65,11 +78,13 @@ async def update_order(order_id: int, order_update: OrderUpdate, payload: dict =
     current_order = database.get_order(order_id)
     if not current_order:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+
     if order_update.status:
         try:
             database.update_order_status(order_id, order_update.status)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Недопустимый статус") from exc
+
     return {"message": "Заявка обновлена"}
 
 
@@ -87,6 +102,7 @@ async def get_order_files(order_id: int, payload: dict = Depends(verify_token)):
                 )
                 if file_info.status_code == 200:
                     data = file_info.json().get("result", {})
+                    data = file_info.json().get("result", {}) or {}
                     if data.get("file_path"):
                         file_url = f"https://api.telegram.org/file/bot{settings.bot_token}/{data['file_path']}"
             except Exception:
@@ -128,3 +144,41 @@ async def send_message(order_id: int, body: MessageCreate, payload: dict = Depen
         raise HTTPException(status_code=400, detail=detail)
 
     return {"message": "Сообщение отправлено"}
+
+@router.post("/{order_id}/messages")
+async def send_message(order_id: int, body: MessageCreate, payload: dict = Depends(verify_token)):
+    order = database.get_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if order.get("status") == "canceled":
+        raise HTTPException(status_code=400, detail="Нельзя отправить сообщение для отменённой заявки")
+
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Текст сообщения пустой")
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                "http://bot:8081/internal/sendMessage",
+                headers={"X-Internal-Key": settings.internal_api_key},
+                json={"user_id": order["user_id"], "text": text, "order_id": order_id},
+            )
+    except Exception as exc:
+        logger.exception("Ошибка вызова bot internal API")
+        raise HTTPException(status_code=400, detail="Не удалось отправить сообщение в Telegram") from exc
+
+    if response.status_code >= 400:
+        detail = "Не удалось отправить сообщение в Telegram"
+        try:
+            detail = response.json().get("error", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail=detail)
+
+    try:
+        database.add_order_message(order_id, "out", text)
+    except Exception:
+        logger.exception("Не удалось сохранить сообщение в БД (backend)")
+
+    return {"ok": True}
