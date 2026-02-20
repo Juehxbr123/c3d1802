@@ -9,7 +9,6 @@ from pymysql.cursors import DictCursor
 from config import settings
 
 ALLOWED_STATUSES = {"draft", "new", "submitted", "in_work", "done", "canceled"}
-ACTIVE_STATUSES = {"draft", "new", "submitted", "in_work"}
 
 
 class DatabaseError(Exception):

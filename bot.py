@@ -239,6 +239,8 @@ async def persist(state: FSMContext) -> None:
     payload = data.get("payload", {})
     database.update_order_payload(int(order_id), payload, payload_summary(payload))
 
+def get_orders_chat_id() -> str:
+    return get_cfg("orders_chat_id", settings.orders_chat_id)
 
 # -----------------------------
 # Flow
@@ -622,6 +624,15 @@ async def on_file(message: Message, state: FSMContext):
     await message.answer(get_cfg("text_submit_ok", "✅ Заявка отправлена! Мы скоро свяжемся с вами."), reply_markup=kb([nav_row(False)]))
     await notify_orders_chat_message(message, payload, order_id)
 
+async def send_result_message(message: Message, state: FSMContext):
+    data = await state.get_data()
+    payload = data.get("payload", {})
+    text = f"{get_cfg('text_result_prefix', 'Проверьте заявку:')}\n{payload_summary(payload)}\n\n{get_cfg('text_price_note', '💰 Уточнит менеджер после проверки.')}"
+    await send_step(message, text, kb([
+        [InlineKeyboardButton(text="✅ Отправить заявку", callback_data="submit:order")],
+        [InlineKeyboardButton(text="🔁 Новый расчет", callback_data="nav:menu")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="nav:menu")],
+    ]))
 
 async def notify_orders_chat(cb: CallbackQuery, payload: dict[str, Any], order_id: int) -> None:
     if not cb.bot:
