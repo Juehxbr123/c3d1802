@@ -121,49 +121,109 @@ const Orders = () => {
   return (
     <div>
       <h1>Заявки Chel3D</h1>
+
       <Row gutter={12} style={{ marginBottom: 16 }}>
-        <Col span={8}><Card><Statistic title='Всего заявок' value={stats.total_orders} prefix={<ShoppingCartOutlined />} /></Card></Col>
-        <Col span={8}><Card><Statistic title='Новые' value={stats.new_orders} prefix={<Badge dot status='processing' />} /></Card></Col>
-        <Col span={8}><Card><Statistic title='Активные' value={stats.active_orders} prefix={<SyncOutlined spin />} /></Card></Col>
+        <Col span={8}>
+          <Card>
+            <Statistic title='Всего заявок' value={stats.total_orders} prefix={<ShoppingCartOutlined />} />
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card>
+            <Statistic title='Новых' value={stats.new_orders} prefix={<UserOutlined />} />
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card>
+            <Statistic title='Активных' value={stats.active_orders} prefix={<SyncOutlined />} />
+          </Card>
+        </Col>
       </Row>
+
       <Space style={{ marginBottom: 12 }}>
-        <span>Фильтр:</span>
-        <Select allowClear placeholder='Все статусы' style={{ width: 220 }} onChange={setStatusFilter}>
+        <Select
+          allowClear
+          placeholder="Фильтр статуса"
+          style={{ width: 220 }}
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v)}
+        >
           {statusOptions.map((s) => <Option key={s.value} value={s.value}>{s.label}</Option>)}
         </Select>
+        <Button icon={<SyncOutlined />} onClick={fetchOrders}>Обновить</Button>
       </Space>
-      <Table rowKey='id' loading={loading} columns={columns} dataSource={orders} />
 
-      <Modal title={`Заявка №${selectedOrder?.id}`} open={modalVisible} onCancel={() => setModalVisible(false)} footer={null} width={1000}>
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={orders}
+        columns={columns}
+        pagination={{ pageSize: 20 }}
+      />
+
+      <Modal
+        open={modalVisible}
+        title={selectedOrder ? `Заявка #${selectedOrder.id}` : 'Заявка'}
+        onCancel={() => setModalVisible(false)}
+        footer={null}
+        width={900}
+      >
         {selectedOrder && (
           <Row gutter={16}>
             <Col span={12}>
-              <h3>Клиент</h3>
-              <p><UserOutlined /> {selectedOrder.full_name || 'Без имени'}</p>
-              <p>Пользователь: @{selectedOrder.username || '-'}</p>
-              <p>Telegram ID: {selectedOrder.user_id}</p>
-              <p>Тип: {selectedOrder.branch}</p>
-              <Tag color={statusColor[selectedOrder.status]}>{statusOptions.find((s) => s.value === selectedOrder.status)?.label}</Tag>
-              <h3 style={{ marginTop: 16 }}>Параметры</h3>
-              <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify((() => { try { return JSON.parse(selectedOrder.order_payload || '{}'); } catch { return selectedOrder.order_payload || {}; } })(), null, 2)}</pre>
-            </Col>
-            <Col span={12}>
-              <h3>Файлы клиента</h3>
-              {(files || []).filter((f) => f.file_url).map((f) => (
-                <Image key={f.id} src={f.file_url} alt={f.original_name} style={{ marginBottom: 8 }} />
-              ))}
-              <h3 style={{ marginTop: 16 }}>Чат с клиентом</h3>
-              <div style={{ maxHeight: 250, overflow: 'auto', border: '1px solid #eee', padding: 8, marginBottom: 8 }}>
-                {chatMessages.map((m) => (
-                  <p key={m.id}><b>{m.direction === 'out' ? 'Менеджер' : 'Клиент'}:</b> {m.message_text}</p>
+              <Card title="Информация" style={{ marginBottom: 12 }}>
+                <p><b>Клиент:</b> {selectedOrder.full_name || 'Без имени'} (@{selectedOrder.username || '-'})</p>
+                <p><b>Тип:</b> {selectedOrder.branch}</p>
+                <p>
+                  <b>Статус:</b>{' '}
+                  <Tag color={statusColor[selectedOrder.status] || 'default'}>
+                    {statusOptions.find((s) => s.value === selectedOrder.status)?.label || selectedOrder.status}
+                  </Tag>
+                </p>
+                <p><b>Кратко:</b> {selectedOrder.summary || '-'}</p>
+              </Card>
+
+              <Card title="Файлы">
+                {files.length === 0 && <p>Нет файлов</p>}
+                {files.map((f) => (
+                  <div key={f.id} style={{ marginBottom: 10 }}>
+                    <div><b>{f.original_name || f.telegram_file_id}</b></div>
+                    {f.file_url ? (
+                      <Image width={180} src={f.file_url} />
+                    ) : (
+                      <Badge status="processing" text="URL не найден (возможно, файл не картинка)" />
+                    )}
+                  </div>
                 ))}
-              </div>
-              <Form onFinish={sendManagerMessage}>
-                <Form.Item name='text' rules={[{ required: true, message: 'Введите сообщение' }]}>
-                  <Input.TextArea rows={3} placeholder='Введите сообщение клиенту' />
-                </Form.Item>
-                <Button type='primary' htmlType='submit' loading={sending}>Отправить в Telegram</Button>
-              </Form>
+              </Card>
+            </Col>
+
+            <Col span={12}>
+              <Card title="Чат с клиентом" style={{ marginBottom: 12 }}>
+                {chatMessages.length === 0 && <p>Сообщений пока нет</p>}
+                {chatMessages.map((m) => (
+                  <div key={m.id} style={{ padding: 8, borderBottom: '1px solid #f0f0f0' }}>
+                    <Tag>{m.direction === 'in' ? 'Входящее' : 'Исходящее'}</Tag>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{m.message_text}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>{dayjs(m.created_at).format('DD.MM.YYYY HH:mm')}</div>
+                  </div>
+                ))}
+              </Card>
+
+              <Card title="Отправить сообщение клиенту">
+                <Form onFinish={sendManagerMessage} layout="vertical">
+                  <Form.Item
+                    name="text"
+                    label="Текст"
+                    rules={[{ required: true, message: 'Введите текст' }]}
+                  >
+                    <Input.TextArea rows={4} />
+                  </Form.Item>
+                  <Button type="primary" htmlType="submit" loading={sending}>
+                    Отправить в Telegram
+                  </Button>
+                </Form>
+              </Card>
             </Col>
           </Row>
         )}

@@ -30,8 +30,17 @@ class MessageCreate(BaseModel):
 
 
 @router.get("/")
-async def get_orders(page: int = 1, limit: int = 20, status_filter: str | None = None, payload: dict = Depends(verify_token)):
+async def get_orders(
+    page: int = 1,
+    limit: int = 20,
+    status_filter: str | None = None,
+    payload: dict = Depends(verify_token),
+):
     try:
+        if page < 1:
+            page = 1
+        if limit < 1:
+            limit = 20
         offset = (page - 1) * limit
         orders = database.get_orders_paginated(limit, offset, status_filter)
         for order in orders:
@@ -46,7 +55,7 @@ async def get_orders(page: int = 1, limit: int = 20, status_filter: str | None =
 async def get_order_stats(payload: dict = Depends(verify_token)):
     try:
         return database.get_order_statistics()
-    except Exception as exc:
+    except Exception:
         logger.exception("Ошибка получения статистики")
         return {"total_orders": 0, "new_orders": 0, "active_orders": 0}
 
@@ -86,7 +95,7 @@ async def get_order_files(order_id: int, payload: dict = Depends(verify_token)):
                     params={"file_id": item["telegram_file_id"]},
                 )
                 if file_info.status_code == 200:
-                    data = file_info.json().get("result", {})
+                    data = (file_info.json() or {}).get("result", {}) or {}
                     if data.get("file_path"):
                         file_url = f"https://api.telegram.org/file/bot{settings.bot_token}/{data['file_path']}"
             except Exception:
@@ -108,12 +117,16 @@ async def send_message(order_id: int, body: MessageCreate, payload: dict = Depen
     if order.get("status") == "canceled":
         raise HTTPException(status_code=400, detail="Нельзя отправить сообщение для отменённой заявки")
 
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Текст сообщения пустой")
+
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(
                 "http://bot:8081/internal/sendMessage",
                 headers={"X-Internal-Key": settings.internal_api_key},
-                json={"user_id": order["user_id"], "text": body.text, "order_id": order_id},
+                json={"user_id": order["user_id"], "text": text, "order_id": order_id},
             )
     except Exception as exc:
         logger.exception("Ошибка вызова bot internal API")
@@ -122,9 +135,14 @@ async def send_message(order_id: int, body: MessageCreate, payload: dict = Depen
     if response.status_code >= 400:
         detail = "Не удалось отправить сообщение в Telegram"
         try:
-            detail = response.json().get("error", detail)
+            detail = (response.json() or {}).get("error", detail)
         except Exception:
             pass
         raise HTTPException(status_code=400, detail=detail)
+
+    try:
+        database.add_order_message(int(order_id), "out", text, None)
+    except Exception:
+        logger.exception("Не удалось сохранить исходящее сообщение")
 
     return {"message": "Сообщение отправлено"}
