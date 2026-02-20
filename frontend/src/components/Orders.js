@@ -139,6 +139,13 @@ const Orders = () => {
           </Card>
         </Col>
       </Row>
+      <Space style={{ marginBottom: 12 }}>
+        <span>Фильтр:</span>
+        <Select allowClear placeholder='Все статусы' style={{ width: 220 }} onChange={setStatusFilter}>
+          {statusOptions.map((s) => <Option key={s.value} value={s.value}>{s.label}</Option>)}
+        </Select>
+      </Space>
+      <Table rowKey='id' loading={loading} columns={columns} dataSource={orders} />
 
       <Space style={{ marginBottom: 12 }}>
         <Select

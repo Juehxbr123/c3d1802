@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 from pathlib import Path
 from typing import Any, Optional
@@ -254,6 +255,8 @@ async def show_main(message: Message, state: FSMContext) -> None:
         photo_ref_for("photo_main_menu"),
     )
 
+def get_cfg(key: str, default: str = "") -> str:
+    return bot_cfg().get(key, default)
 
 async def start_order(cb: CallbackQuery, state: FSMContext, branch: str) -> None:
     order_id = database.create_order(cb.from_user.id, cb.from_user.username, cb.from_user.full_name, branch)
@@ -287,6 +290,8 @@ async def go_back(cb: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(history=history)
     await render_step(cb, state, prev, from_back=True)
 
+def get_orders_chat_id() -> str:
+    return get_cfg("orders_chat_id", settings.orders_chat_id)
 
 def _push_history(state_data: dict[str, Any]) -> list[str]:
     history: list[str] = state_data.get("history", [])
@@ -421,6 +426,16 @@ async def on_nav_menu(cb: CallbackQuery, state: FSMContext):
         await show_main(cb.message, state)
     await cb.answer()
 
+async def on_about_item(cb: CallbackQuery, state: FSMContext):
+    key = cb.data.split(":", 1)[1]
+    mapping = {
+        "eq": ("about_equipment_text", "photo_about_equipment", "🏭 Наше оборудование"),
+        "projects": ("about_projects_text", "photo_about_projects", "🖼 Наши проекты"),
+        "contacts": ("about_contacts_text", "photo_about_contacts", "📞 Контакты"),
+        "map": ("about_map_text", "photo_about_map", "📍 Мы на карте"),
+    }
+    text_key, photo_key, default_text = mapping.get(key, ("about_text", "photo_about", "О нас"))
+    await send_step_cb(cb, get_cfg(text_key, default_text), kb([nav_row()]), photo_ref_for(photo_key))
 
 @dp.callback_query(F.data == "nav:back")
 async def on_nav_back(cb: CallbackQuery, state: FSMContext):
@@ -526,6 +541,42 @@ async def on_text(message: Message, state: FSMContext):
         await render_step(cb_fake, state, "attach_file")  # type: ignore[arg-type]
         return
 
+async def on_set(cb: CallbackQuery, state: FSMContext):
+    _, key, value = cb.data.split(":", 2)
+    data = await state.get_data()
+    payload = data.get("payload", {})
+    payload[key] = value
+    await state.update_data(payload=payload)
+    await persist(state)
+
+    if key == "technology":
+        await send_step_cb(cb, get_cfg("text_select_material", "Выберите материал:"), step_keyboard_for_print(payload))
+    elif key == "material":
+        if value.startswith("🤔"):
+            await state.update_data(waiting_text="other_material")
+            await send_step_cb(cb, get_cfg("text_describe_material", "Опишите материал/смолу свободным текстом:"), kb([nav_row()]))
+        else:
+            await send_step_cb(cb, get_cfg("text_attach_file", "Прикрепите STL/3MF/OBJ документ или фото, либо нажмите ❌ У меня нет файла"), kb([
+                [InlineKeyboardButton(text="❌ У меня нет файла", callback_data="set:file:нет")],
+                nav_row(),
+            ]))
+    elif key in {"scan_type", "idea_type", "goods_type"}:
+        await state.update_data(waiting_text="description")
+        await send_step_cb(cb, get_cfg("text_describe_task", "Опишите задачу свободным текстом:"), kb([nav_row()]))
+    elif key == "file":
+        await send_result(cb, state)
+    else:
+        await cb.answer("Сохранено")
+
+
+async def on_text(message: Message, state: FSMContext):
+    data = await state.get_data()
+    waiting = data.get("waiting_text")
+    if not waiting:
+        order_id = database.find_or_create_active_order(message.from_user.id, message.from_user.username, message.from_user.full_name)
+        database.add_order_message(order_id, "in", message.text or "")
+        await send_step(message, "Сообщение получено. Менеджер ответит в этом чате.")
+        return
 
 @dp.message(F.content_type.in_({ContentType.DOCUMENT, ContentType.PHOTO}))
 async def on_file(message: Message, state: FSMContext):
@@ -557,6 +608,7 @@ async def on_file(message: Message, state: FSMContext):
         await message.answer("Не смог распознать файл. Попробуйте ещё раз.")
         return
 
+    local_path = None
     try:
         database.add_order_file(order_id, file_id, filename, mime, size, message.message_id, None)
     except Exception:

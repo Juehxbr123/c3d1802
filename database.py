@@ -77,6 +77,14 @@ def set_bot_config(key: str, value: str) -> None:
             (key, value),
         )
 
+        if "order_payload" in cols:
+            sets.append("order_payload=%s")
+            params.append(json.dumps(payload, ensure_ascii=False))
+        if "summary" in cols:
+            sets.append("summary=%s")
+            params.append(summary)
+        if "updated_at" in cols:
+            sets.append("updated_at=NOW()")
 
 def set_bot_config_many(items: dict[str, str]) -> None:
     if not items:
