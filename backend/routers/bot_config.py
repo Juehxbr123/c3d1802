@@ -1,11 +1,13 @@
+import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 import database
 from routers.auth import verify_token
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 TEXT_KEYS = [
     # Общие
@@ -38,6 +40,7 @@ TEXT_KEYS = [
     "btn_resin_other",
     "text_describe_material",
     "text_attach_file",
+    "text_describe_task",
     # Скан
     "text_scan_type",
     "btn_scan_human",
@@ -51,7 +54,6 @@ TEXT_KEYS = [
     "btn_idea_master",
     "btn_idea_sign",
     "btn_idea_other",
-    "text_describe_task",
     # О нас
     "about_text",
     "btn_about_equipment",
@@ -106,52 +108,100 @@ SETTINGS_KEYS = [
 ] + TOGGLE_KEYS
 
 
+def _clean_str(v: Any) -> str:
+    return "" if v is None else str(v)
+
+
 @router.get("/")
 async def get_bot_config(payload: dict = Depends(verify_token)) -> dict[str, Any]:
     return database.get_bot_config()
 
 
 @router.put("/")
-async def update_bot_config(data: dict[str, str], payload: dict = Depends(verify_token)):
-    for key, value in data.items():
-        database.set_bot_config(key, str(value))
-    return {"message": "Настройки сохранены"}
+async def update_bot_config(data: dict[str, Any], payload: dict = Depends(verify_token)):
+    try:
+        database.set_bot_config_many({str(k): _clean_str(v) for k, v in (data or {}).items()})
+        return {"message": "Настройки сохранены"}
+    except Exception as exc:
+        logger.exception("Ошибка сохранения настроек бота")
+        raise HTTPException(status_code=500, detail="Не удалось сохранить настройки") from exc
 
 
 @router.get("/texts")
 async def get_bot_texts(payload: dict = Depends(verify_token)):
-    config = database.get_bot_config()
-    return {key: config.get(key, "") for key in TEXT_KEYS}
+    cfg = database.get_bot_config()
+    return {k: cfg.get(k, "") for k in TEXT_KEYS}
 
 
 @router.put("/texts")
 async def update_bot_texts(data: dict[str, Any], payload: dict = Depends(verify_token)):
-    for key in TEXT_KEYS:
-        if key in data:
-            database.set_bot_config(key, str(data[key]))
-    return {"message": "Тексты сохранены"}
+    try:
+        to_save: dict[str, str] = {}
+        for k in TEXT_KEYS:
+            if k in (data or {}):
+                to_save[k] = _clean_str(data.get(k))
+        database.set_bot_config_many(to_save)
+        return {"message": "Тексты сохранены"}
+    except Exception as exc:
+        logger.exception("Ошибка сохранения текстов бота")
+        raise HTTPException(status_code=500, detail="Не удалось сохранить тексты") from exc
+
+
+@router.get("/photos")
+async def get_bot_photos(payload: dict = Depends(verify_token)):
+    cfg = database.get_bot_config()
+    return {k: cfg.get(k, "") for k in PHOTO_KEYS}
+
+
+@router.put("/photos")
+async def update_bot_photos(data: dict[str, Any], payload: dict = Depends(verify_token)):
+    try:
+        to_save: dict[str, str] = {}
+        for k in PHOTO_KEYS:
+            if k in (data or {}):
+                to_save[k] = _clean_str(data.get(k))
+        database.set_bot_config_many(to_save)
+        return {"message": "Фото сохранены"}
+    except Exception as exc:
+        logger.exception("Ошибка сохранения фото")
+        raise HTTPException(status_code=500, detail="Не удалось сохранить фото") from exc
+
+
+@router.get("/toggles")
+async def get_bot_toggles(payload: dict = Depends(verify_token)):
+    cfg = database.get_bot_config()
+    return {k: cfg.get(k, "") for k in TOGGLE_KEYS}
+
+
+@router.put("/toggles")
+async def update_bot_toggles(data: dict[str, Any], payload: dict = Depends(verify_token)):
+    try:
+        to_save: dict[str, str] = {}
+        for k in TOGGLE_KEYS:
+            if k in (data or {}):
+                to_save[k] = _clean_str(data.get(k))
+        database.set_bot_config_many(to_save)
+        return {"message": "Переключатели сохранены"}
+    except Exception as exc:
+        logger.exception("Ошибка сохранения переключателей")
+        raise HTTPException(status_code=500, detail="Не удалось сохранить переключатели") from exc
 
 
 @router.get("/settings")
 async def get_bot_settings(payload: dict = Depends(verify_token)):
-    config = database.get_bot_config()
-    keys = SETTINGS_KEYS + PHOTO_KEYS
-    result = {key: config.get(key, "") for key in keys}
-    for key in TOGGLE_KEYS:
-        if result.get(key, "") == "":
-            result[key] = True
-        else:
-            result[key] = str(result[key]).lower() in {"1", "true", "yes", "on"}
-    return result
+    cfg = database.get_bot_config()
+    return {k: cfg.get(k, "") for k in SETTINGS_KEYS}
 
 
 @router.put("/settings")
 async def update_bot_settings(data: dict[str, Any], payload: dict = Depends(verify_token)):
-    keys = SETTINGS_KEYS + PHOTO_KEYS
-    for key in keys:
-        if key in data:
-            value = data[key]
-            if key in TOGGLE_KEYS:
-                value = "1" if bool(value) else "0"
-            database.set_bot_config(key, str(value))
-    return {"message": "Системные настройки сохранены"}
+    try:
+        to_save: dict[str, str] = {}
+        for k in SETTINGS_KEYS:
+            if k in (data or {}):
+                to_save[k] = _clean_str(data.get(k))
+        database.set_bot_config_many(to_save)
+        return {"message": "Настройки сохранены"}
+    except Exception as exc:
+        logger.exception("Ошибка сохранения настроек")
+        raise HTTPException(status_code=500, detail="Не удалось сохранить настройки") from exc
