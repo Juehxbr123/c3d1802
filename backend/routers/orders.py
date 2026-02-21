@@ -1,171 +1,130 @@
+import logging
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
+
 import database
+from config import settings
 from routers.auth import verify_token
-import httpx
-import os
-import config
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# Pydantic модели
-class OrderBase(BaseModel):
-    id: int
-    user_id: int
-    username: Optional[str]
-    full_name: str
-    status: str
-    work_type: Optional[str]
-    dimensions_info: Optional[str]
-    conditions: Optional[str]
-    urgency: Optional[str]
-    comment: Optional[str]
-    photo_file_id: Optional[str]
-    created_at: datetime
-    internal_note: Optional[str]
+STATUS_MAP = {
+    "draft": "Черновик",
+    "new": "Новая заявка",
+    "submitted": "Новая заявка",
+    "in_work": "В работе",
+    "done": "Готово",
+    "canceled": "Отменено",
+}
+
 
 class OrderUpdate(BaseModel):
-    status: Optional[str] = None
-    internal_note: Optional[str] = None
+    status: str | None = None
 
-class OrderStats(BaseModel):
-    total_orders: int
-    new_orders: int
-    active_orders: int
 
-@router.get("/", response_model=List[OrderBase])
-async def get_orders(
-    page: int = 1,
-    limit: int = 20,
-    status_filter: Optional[str] = None,
-    payload: dict = Depends(verify_token)
-):
-    """Получить список заказов с пагинацией"""
+class MessageCreate(BaseModel):
+    text: str
+
+
+@router.get("/")
+async def get_orders(page: int = 1, limit: int = 20, status_filter: str | None = None, payload: dict = Depends(verify_token)):
     try:
         offset = (page - 1) * limit
         orders = database.get_orders_paginated(limit, offset, status_filter)
+        for order in orders:
+            order["status_label"] = STATUS_MAP.get(order.get("status"), order.get("status"))
         return orders
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка получения заказов: {str(e)}")
+    except Exception as exc:
+        logger.exception("Ошибка получения списка заявок")
+        raise HTTPException(status_code=500, detail="Ошибка получения списка заявок") from exc
 
-@router.get("/stats", response_model=OrderStats)
+
+@router.get("/stats")
 async def get_order_stats(payload: dict = Depends(verify_token)):
-    """Получить статистику заказов"""
     try:
-        stats = database.get_order_statistics()
-        return stats
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка получения статистики: {str(e)}")
+        return database.get_order_statistics()
+    except Exception as exc:
+        logger.exception("Ошибка получения статистики")
+        return {"total_orders": 0, "new_orders": 0, "active_orders": 0}
 
-@router.get("/{order_id}", response_model=OrderBase)
+
+@router.get("/{order_id}")
 async def get_order(order_id: int, payload: dict = Depends(verify_token)):
-    """Получить заказ по ID"""
-    try:
-        order = database.get_order(order_id)
-        if not order:
-            raise HTTPException(status_code=404, detail="Заказ не найден")
-        return order
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка получения заказа: {str(e)}")
+    order = database.get_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    order["status_label"] = STATUS_MAP.get(order.get("status"), order.get("status"))
+    return order
+
 
 @router.put("/{order_id}")
-async def update_order(
-    order_id: int,
-    order_update: OrderUpdate,
-    payload: dict = Depends(verify_token)
-):
-    """Обновить заказ"""
-    try:
-        current_order = database.get_order(order_id)
-        if not current_order:
-            raise HTTPException(status_code=404, detail="Заказ не найден")
-
-        old_status = current_order.get('status')
-        
-        if order_update.status:
-            database.update_order_field(order_id, 'status', order_update.status)
-            
-            # Если статус изменился - отправляем уведомление
-            if old_status != order_update.status:
-                await send_status_update_notification(
-                    current_order['user_id'], 
-                    order_id, 
-                    order_update.status
-                )
-
-        if order_update.internal_note is not None:
-            database.update_order_field(order_id, 'internal_note', order_update.internal_note)
-
-        return {"message": "Заказ обновлен успешно"}
-    except Exception as e:
-        print(f"Update order error: {e}")
-        raise HTTPException(status_code=500, detail=f"Ошибка обновления заказа: {str(e)}")
-
-async def send_status_update_notification(user_id: int, order_id: int, new_status: str):
-    """Отправить уведомление клиенту через Telegram Bot API"""
-    status_map = {
-        'new': '🔥 НОВЫЙ (Принят в обработку)',
-        'discussion': '💬 Обсуждение деталей',
-        'approved': '🛠 Одобрен / В работе',
-        'work': '⚙️ Выполняется',
-        'done': '✅ ГОТОВ!',
-        'rejected': '❌ Отказ'
-    }
-    
-    status_text = status_map.get(new_status, new_status)
-    message_text = f"⚙️ <b>Статус вашего заказа №{order_id} изменен:</b>\n\n🔹 {status_text}"
-    
-    bot_token = config.BOT_TOKEN
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    
-    async with httpx.AsyncClient() as client:
+async def update_order(order_id: int, order_update: OrderUpdate, payload: dict = Depends(verify_token)):
+    current_order = database.get_order(order_id)
+    if not current_order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if order_update.status:
         try:
-            payload = {
-                "chat_id": user_id,
-                "text": message_text,
-                "parse_mode": "HTML"
-            }
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-        except Exception as e:
-            print(f"Failed to send Telegram notification: {e}")
+            database.update_order_status(order_id, order_update.status)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Недопустимый статус") from exc
+    return {"message": "Заявка обновлена"}
 
-@router.get("/{order_id}/photos")
-async def get_order_photos(order_id: int, payload: dict = Depends(verify_token)):
-    """Получить рабочие ссылки на фото заказа"""
+
+@router.get("/{order_id}/files")
+async def get_order_files(order_id: int, payload: dict = Depends(verify_token)):
+    files = database.list_order_files(order_id)
+    result = []
+    async with httpx.AsyncClient(timeout=20) as client:
+        for item in files:
+            file_url = None
+            try:
+                file_info = await client.get(
+                    f"https://api.telegram.org/bot{settings.bot_token}/getFile",
+                    params={"file_id": item["telegram_file_id"]},
+                )
+                if file_info.status_code == 200:
+                    data = file_info.json().get("result", {})
+                    if data.get("file_path"):
+                        file_url = f"https://api.telegram.org/file/bot{settings.bot_token}/{data['file_path']}"
+            except Exception:
+                logger.exception("Ошибка резолва telegram file_id")
+            result.append({**item, "file_url": file_url})
+    return {"files": result}
+
+
+@router.get("/{order_id}/messages")
+async def get_messages(order_id: int, payload: dict = Depends(verify_token)):
+    return {"messages": database.list_order_messages(order_id, 30)}
+
+
+@router.post("/{order_id}/messages")
+async def send_message(order_id: int, body: MessageCreate, payload: dict = Depends(verify_token)):
+    order = database.get_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if order.get("status") == "canceled":
+        raise HTTPException(status_code=400, detail="Нельзя отправить сообщение для отменённой заявки")
+
     try:
-        order = database.get_order(order_id)
-        if not order or not order['photo_file_id']:
-            return {"photos": []}
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                "http://bot:8081/internal/sendMessage",
+                headers={"X-Internal-Key": settings.internal_api_key},
+                json={"user_id": order["user_id"], "text": body.text, "order_id": order_id},
+            )
+    except Exception as exc:
+        logger.exception("Ошибка вызова bot internal API")
+        raise HTTPException(status_code=400, detail="Не удалось отправить сообщение в Telegram") from exc
 
-        raw_ids = order['photo_file_id'].split(',')
-        # Очищаем ID от префиксов p: и d:
-        clean_ids = [p[2:] if p.startswith(('p:', 'd:')) else p for p in raw_ids]
-        
-        photo_urls = []
-        bot_token = config.BOT_TOKEN
-        
-        async with httpx.AsyncClient() as client:
-            for file_id in clean_ids:
-                try:
-                    # 1. Получаем путь к файлу через getFile
-                    file_info_url = f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}"
-                    resp = await client.get(file_info_url)
-                    
-                    if resp.status_code == 200:
-                        file_path = resp.json().get('result', {}).get('file_path')
-                        if file_path:
-                            # 2. Формируем прямую ссылку на скачивание
-                            full_url = f"https://api.telegram.org/file/bot{bot_token}/{file_path}"
-                            photo_urls.append(full_url)
-                except Exception as e:
-                    print(f"Error resolving file_id {file_id}: {e}")
-                    
-        return {"photos": photo_urls}
-    except Exception as e:
-        print(f"Get photos error: {e}")
-        raise HTTPException(status_code=500, detail=f"Ошибка получения фото: {str(e)}")
+    if response.status_code >= 400:
+        detail = "Не удалось отправить сообщение в Telegram"
+        try:
+            detail = response.json().get("error", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail=detail)
+
+    return {"message": "Сообщение отправлено"}
