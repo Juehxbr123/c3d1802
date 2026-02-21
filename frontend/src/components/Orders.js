@@ -1,5 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Card, Col, Form, Image, Input, message, Modal, Row, Select, Space, Statistic, Table, Tag } from 'antd';
+import {
+  Badge,
+  Button,
+  Card,
+  Col,
+  Form,
+  Image,
+  Input,
+  message,
+  Modal,
+  Row,
+  Select,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+} from 'antd';
 import { ShoppingCartOutlined, SyncOutlined, UserOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import dayjs from 'dayjs';
@@ -37,7 +53,7 @@ const Orders = () => {
     setLoading(true);
     try {
       const { data } = await axios.get('/api/orders/', { params: { status_filter: statusFilter } });
-      setOrders(data);
+      setOrders(Array.isArray(data) ? data : []);
     } catch {
       message.error('Не удалось загрузить заявки');
     } finally {
@@ -48,7 +64,7 @@ const Orders = () => {
   const fetchStats = useCallback(async () => {
     try {
       const { data } = await axios.get('/api/orders/stats');
-      setStats(data);
+      setStats(data || { total_orders: 0, new_orders: 0, active_orders: 0 });
     } catch {
       setStats({ total_orders: 0, new_orders: 0, active_orders: 0 });
       message.warning('Статистика временно недоступна');
@@ -68,8 +84,8 @@ const Orders = () => {
         axios.get(`/api/orders/${order.id}/files`),
         axios.get(`/api/orders/${order.id}/messages`),
       ]);
-      setFiles(filesResp.data.files || []);
-      setChatMessages(msgResp.data.messages || []);
+      setFiles(filesResp?.data?.files || []);
+      setChatMessages(msgResp?.data?.messages || []);
     } catch {
       setFiles([]);
       setChatMessages([]);
@@ -79,12 +95,16 @@ const Orders = () => {
 
   const sendManagerMessage = async (values) => {
     if (!selectedOrder) return;
+
+    const text = (values?.text || '').trim();
+    if (!text) return;
+
     setSending(true);
     try {
-      await axios.post(`/api/orders/${selectedOrder.id}/messages`, { text: values.text });
+      await axios.post(`/api/orders/${selectedOrder.id}/messages`, { text });
       message.success('Сообщение отправлено в Telegram');
       const { data } = await axios.get(`/api/orders/${selectedOrder.id}/messages`);
-      setChatMessages(data.messages || []);
+      setChatMessages(data?.messages || []);
     } catch (err) {
       message.error(err?.response?.data?.detail || 'Не удалось отправить сообщение в Telegram');
     } finally {
@@ -103,66 +123,139 @@ const Orders = () => {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 80 },
-    { title: 'Клиент', render: (_, r) => `${r.full_name || 'Без имени'} (${r.username ? '@'+r.username : 'id:'+r.user_id})` },
+    {
+      title: 'Клиент',
+      render: (_, r) => `${r.full_name || 'Без имени'} (${r.username ? '@' + r.username : 'id:' + r.user_id})`,
+    },
     { title: 'Тип заявки', dataIndex: 'branch' },
     { title: 'Кратко', dataIndex: 'summary' },
     {
       title: 'Статус',
       render: (_, r) => (
         <Select value={r.status} style={{ width: 150 }} onChange={(v) => updateStatus(r.id, v)}>
-          {statusOptions.map((s) => <Option key={s.value} value={s.value}>{s.label}</Option>)}
+          {statusOptions.map((s) => (
+            <Option key={s.value} value={s.value}>
+              {s.label}
+            </Option>
+          ))}
         </Select>
-      )
+      ),
     },
     { title: 'Дата', dataIndex: 'created_at', render: (v) => dayjs(v).format('DD.MM.YYYY HH:mm') },
     { title: 'Открыть', render: (_, r) => <Button onClick={() => openOrder(r)}>Карточка</Button> },
   ];
 
+  const parsedPayload = (() => {
+    if (!selectedOrder) return {};
+    try {
+      return JSON.parse(selectedOrder.order_payload || '{}');
+    } catch {
+      return selectedOrder.order_payload || {};
+    }
+  })();
+
   return (
     <div>
       <h1>Заявки Chel3D</h1>
+
       <Row gutter={12} style={{ marginBottom: 16 }}>
-        <Col span={8}><Card><Statistic title='Всего заявок' value={stats.total_orders} prefix={<ShoppingCartOutlined />} /></Card></Col>
-        <Col span={8}><Card><Statistic title='Новые' value={stats.new_orders} prefix={<Badge dot status='processing' />} /></Card></Col>
-        <Col span={8}><Card><Statistic title='Активные' value={stats.active_orders} prefix={<SyncOutlined spin />} /></Card></Col>
+        <Col span={8}>
+          <Card>
+            <Statistic title='Всего заявок' value={stats.total_orders} prefix={<ShoppingCartOutlined />} />
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card>
+            <Statistic title='Новых' value={stats.new_orders} prefix={<Badge dot status='processing' />} />
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card>
+            <Statistic title='Активных' value={stats.active_orders} prefix={<SyncOutlined spin />} />
+          </Card>
+        </Col>
       </Row>
+
       <Space style={{ marginBottom: 12 }}>
         <span>Фильтр:</span>
         <Select allowClear placeholder='Все статусы' style={{ width: 220 }} onChange={setStatusFilter}>
-          {statusOptions.map((s) => <Option key={s.value} value={s.value}>{s.label}</Option>)}
+          {statusOptions.map((s) => (
+            <Option key={s.value} value={s.value}>
+              {s.label}
+            </Option>
+          ))}
         </Select>
+
+        <Button
+          onClick={() => {
+            fetchOrders();
+            fetchStats();
+          }}
+        >
+          Обновить
+        </Button>
       </Space>
+
       <Table rowKey='id' loading={loading} columns={columns} dataSource={orders} />
 
-      <Modal title={`Заявка №${selectedOrder?.id}`} open={modalVisible} onCancel={() => setModalVisible(false)} footer={null} width={1000}>
+      <Modal
+        title={`Заявка №${selectedOrder?.id || ''}`}
+        open={modalVisible}
+        onCancel={() => setModalVisible(false)}
+        footer={null}
+        width={1000}
+      >
         {selectedOrder && (
           <Row gutter={16}>
             <Col span={12}>
               <h3>Клиент</h3>
-              <p><UserOutlined /> {selectedOrder.full_name || 'Без имени'}</p>
+              <p>
+                <UserOutlined /> {selectedOrder.full_name || 'Без имени'}
+              </p>
               <p>Пользователь: {selectedOrder.username ? `@${selectedOrder.username}` : `id:${selectedOrder.user_id}`}</p>
               <p>Telegram ID: {selectedOrder.user_id}</p>
               <p>Тип: {selectedOrder.branch}</p>
-              <Tag color={statusColor[selectedOrder.status]}>{statusOptions.find((s) => s.value === selectedOrder.status)?.label}</Tag>
+              <Tag color={statusColor[selectedOrder.status]}>
+                {statusOptions.find((s) => s.value === selectedOrder.status)?.label || selectedOrder.status}
+              </Tag>
+
               <h3 style={{ marginTop: 16 }}>Параметры</h3>
-              <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify((() => { try { return JSON.parse(selectedOrder.order_payload || '{}'); } catch { return selectedOrder.order_payload || {}; } })(), null, 2)}</pre>
+              <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(parsedPayload, null, 2)}</pre>
             </Col>
+
             <Col span={12}>
               <h3>Файлы клиента</h3>
               {(files || []).filter((f) => f.file_url).map((f) => (
-                <Image key={f.id} src={f.file_url} alt={f.original_name} style={{ marginBottom: 8 }} />
+                <div key={f.id || f.telegram_file_id} style={{ marginBottom: 10 }}>
+                  <div style={{ marginBottom: 6 }}>{f.original_name || 'Файл'}</div>
+                  <Image src={f.file_url} alt={f.original_name} style={{ maxWidth: '100%' }} />
+                </div>
               ))}
+
               <h3 style={{ marginTop: 16 }}>Чат с клиентом</h3>
-              <div style={{ maxHeight: 250, overflow: 'auto', border: '1px solid #eee', padding: 8, marginBottom: 8 }}>
+              <div
+                style={{
+                  maxHeight: 250,
+                  overflow: 'auto',
+                  border: '1px solid #eee',
+                  padding: 8,
+                  marginBottom: 8,
+                }}
+              >
                 {chatMessages.map((m) => (
-                  <p key={m.id}><b>{m.direction === 'out' ? 'Менеджер' : 'Клиент'}:</b> {m.message_text}</p>
+                  <p key={m.id || `${m.created_at}-${m.direction}`}> 
+                    <b>{m.direction === 'out' ? 'Менеджер' : 'Клиент'}:</b> {m.message_text}
+                  </p>
                 ))}
               </div>
-              <Form onFinish={sendManagerMessage}>
+
+              <Form onFinish={sendManagerMessage} layout='vertical'>
                 <Form.Item name='text' rules={[{ required: true, message: 'Введите сообщение' }]}>
                   <Input.TextArea rows={3} placeholder='Введите сообщение клиенту' />
                 </Form.Item>
-                <Button type='primary' htmlType='submit' loading={sending}>Отправить в Telegram</Button>
+                <Button type='primary' htmlType='submit' loading={sending}>
+                  Отправить в Telegram
+                </Button>
               </Form>
             </Col>
           </Row>
