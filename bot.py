@@ -407,6 +407,16 @@ async def render_step(cb: CallbackQuery, state: FSMContext, step: str, from_back
 # -----------------------------
 dp = Dispatcher(storage=MemoryStorage())
 
+async def on_about_item(cb: CallbackQuery, state: FSMContext):
+    key = cb.data.split(":", 1)[1]
+    mapping = {
+        "eq": ("about_equipment_text", "photo_about_equipment", "🏭 Наше оборудование"),
+        "projects": ("about_projects_text", "photo_about_projects", "🖼 Наши проекты"),
+        "contacts": ("about_contacts_text", "photo_about_contacts", "📞 Контакты"),
+        "map": ("about_map_text", "photo_about_map", "📍 Мы на карте"),
+    }
+    text_key, photo_key, default_text = mapping.get(key, ("about_text", "photo_about", "О нас"))
+    await send_step_cb(cb, get_cfg(text_key, default_text), kb([nav_row()]), photo_ref_for(photo_key))
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
