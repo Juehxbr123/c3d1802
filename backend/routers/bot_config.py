@@ -10,15 +10,18 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 TEXT_KEYS: list[str] = [
+    # Общие
     "welcome_menu_msg",
     "text_submit_ok",
     "text_submit_fail",
     "text_result_prefix",
     "text_price_note",
+    # Главное меню
     "btn_menu_print",
     "btn_menu_scan",
     "btn_menu_idea",
     "btn_menu_about",
+    # Печать
     "text_print_tech",
     "btn_print_fdm",
     "btn_print_resin",
@@ -38,17 +41,20 @@ TEXT_KEYS: list[str] = [
     "text_describe_material",
     "text_attach_file",
     "text_describe_task",
+    # Скан
     "text_scan_type",
     "btn_scan_human",
     "btn_scan_object",
     "btn_scan_industrial",
     "btn_scan_other",
+    # Идея
     "text_idea_type",
     "btn_idea_photo",
     "btn_idea_award",
     "btn_idea_master",
     "btn_idea_sign",
     "btn_idea_other",
+    # О нас
     "about_text",
     "btn_about_equipment",
     "btn_about_projects",
@@ -113,6 +119,7 @@ def _bool_from_cfg(v: Any, default: bool = True) -> bool:
 
 
 def _bool_to_str(v: Any) -> str:
+    # В БД храним как "true"/"false" (и умеем читать 1/0 тоже)
     return "true" if bool(v) else "false"
 
 
