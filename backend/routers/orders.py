@@ -135,7 +135,7 @@ async def send_message(order_id: int, body: MessageCreate, payload: dict = Depen
     if response.status_code >= 400:
         detail = "Не удалось отправить сообщение в Telegram"
         try:
-            detail = (response.json() or {}).get("error", detail)
+            detail = (response.json() or {}).get("detail", detail)
         except Exception:
             pass
         raise HTTPException(status_code=400, detail=detail)
