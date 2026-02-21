@@ -32,7 +32,7 @@ class MessageCreate(BaseModel):
 @router.get("/")
 async def get_orders(
     page: int = 1,
-    limit: int = 20,
+    limit: int = 200,
     status_filter: str | None = None,
     payload: dict = Depends(verify_token),
 ):
@@ -90,12 +90,12 @@ async def get_order_files(order_id: int, payload: dict = Depends(verify_token)):
         for item in files:
             file_url = None
             try:
-                file_info = await client.get(
+                resp = await client.get(
                     f"https://api.telegram.org/bot{settings.bot_token}/getFile",
                     params={"file_id": item["telegram_file_id"]},
                 )
-                if file_info.status_code == 200:
-                    data = (file_info.json() or {}).get("result", {}) or {}
+                if resp.status_code == 200:
+                    data = (resp.json() or {}).get("result", {}) or {}
                     if data.get("file_path"):
                         file_url = f"https://api.telegram.org/file/bot{settings.bot_token}/{data['file_path']}"
             except Exception:
@@ -126,7 +126,7 @@ async def send_message(order_id: int, body: MessageCreate, payload: dict = Depen
             response = await client.post(
                 "http://bot:8081/internal/sendMessage",
                 headers={"X-Internal-Key": settings.internal_api_key},
-                json={"user_id": order["user_id"], "text": text, "order_id": order_id},
+                json={"user_id": int(order["user_id"]), "text": text, "order_id": int(order_id)},
             )
     except Exception as exc:
         logger.exception("Ошибка вызова bot internal API")
@@ -139,10 +139,5 @@ async def send_message(order_id: int, body: MessageCreate, payload: dict = Depen
         except Exception:
             pass
         raise HTTPException(status_code=400, detail=detail)
-
-    try:
-        database.add_order_message(int(order_id), "out", text, None)
-    except Exception:
-        logger.exception("Не удалось сохранить исходящее сообщение")
 
     return {"message": "Сообщение отправлено"}
